@@ -1,0 +1,991 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+
+<head>
+
+    <meta charset="UTF-8">
+
+    <meta
+        name="viewport"
+        content="width=device-width, initial-scale=1.0"
+    >
+
+    <title>
+        {{ story.title }} &#8212; Read History
+    </title>
+
+
+    <style>
+
+        * {
+            box-sizing: border-box;
+        }
+
+
+        body {
+
+            margin: 0;
+
+            padding: 40px 20px;
+
+            background: #0f172a;
+
+            color: #e5e7eb;
+
+            font-family:
+                Arial,
+                Helvetica,
+                sans-serif;
+
+        }
+
+
+        .container {
+
+            max-width: 1000px;
+
+            margin: auto;
+
+        }
+
+
+        /* ==============================
+           STORY NAVIGATION
+        ============================== */
+
+        .story-navigation {
+
+            display: flex;
+
+            align-items: center;
+
+            justify-content: space-between;
+
+            gap: 20px;
+
+            margin-bottom: 28px;
+
+            padding: 14px 16px;
+
+            background: #111827;
+
+            border: 1px solid #273449;
+
+            border-radius: 14px;
+
+        }
+
+
+        .nav-button {
+
+            display: inline-flex;
+
+            align-items: center;
+
+            justify-content: center;
+
+            padding: 9px 14px;
+
+            background: #1f2937;
+
+            border: 1px solid #374151;
+
+            border-radius: 9px;
+
+            color: #d1d5db;
+
+            text-decoration: none;
+
+            font-size: 13px;
+
+            font-weight: 600;
+
+            transition:
+                background 0.2s ease,
+                color 0.2s ease,
+                transform 0.2s ease;
+
+        }
+
+
+        .nav-button:hover {
+
+            background: #273449;
+
+            color: #ffffff;
+
+            transform: translateY(-1px);
+
+        }
+
+
+        .nav-title {
+
+            display: flex;
+
+            flex-direction: column;
+
+            align-items: center;
+
+            gap: 3px;
+
+            min-width: 0;
+
+        }
+
+
+        .nav-label {
+
+            color: #6b7280;
+
+            font-size: 10px;
+
+            font-weight: 700;
+
+            letter-spacing: 1px;
+
+        }
+
+
+        .nav-title strong {
+
+            color: #f9fafb;
+
+            font-size: 15px;
+
+            white-space: nowrap;
+
+            overflow: hidden;
+
+            text-overflow: ellipsis;
+
+            max-width: 300px;
+
+        }
+
+
+        /* ==============================
+           HEADER
+        ============================== */
+
+        .header {
+
+            display: flex;
+
+            align-items: flex-start;
+
+            justify-content: space-between;
+
+            gap: 20px;
+
+            margin-bottom: 25px;
+
+        }
+
+
+        .header-content {
+
+            min-width: 0;
+
+        }
+
+
+        .header h1 {
+
+            margin: 0;
+
+            font-size: 28px;
+
+            color: #f9fafb;
+
+            word-break: break-word;
+
+        }
+
+
+        .header p {
+
+            margin: 8px 0 0;
+
+            color: #9ca3af;
+
+        }
+
+
+        .count {
+
+            flex-shrink: 0;
+
+            padding: 10px 15px;
+
+            background: #1e293b;
+
+            border: 1px solid #334155;
+
+            border-radius: 10px;
+
+            color: #93c5fd;
+
+            font-weight: 600;
+
+            white-space: nowrap;
+
+        }
+
+
+        /* ==============================
+           READ SUMMARY
+        ============================== */
+
+        .read-summary {
+
+            display: grid;
+
+            grid-template-columns:
+                repeat(2, 1fr);
+
+            gap: 16px;
+
+            margin-bottom: 12px;
+
+        }
+
+
+        .summary-card {
+
+            padding: 20px;
+
+            background: #1f2937;
+
+            border: 1px solid #374151;
+
+            border-radius: 12px;
+
+        }
+
+
+        .summary-label {
+
+            color: #9ca3af;
+
+            font-size: 13px;
+
+            font-weight: 600;
+
+            text-transform: uppercase;
+
+            letter-spacing: 0.5px;
+
+        }
+
+
+        .summary-value {
+
+            margin-top: 8px;
+
+            color: #f9fafb;
+
+            font-size: 28px;
+
+            font-weight: 700;
+
+        }
+
+
+        .read-summary-meta {
+
+            margin-bottom: 24px;
+
+            color: #9ca3af;
+
+            font-size: 13px;
+
+            text-align: center;
+
+        }
+
+
+        .read-summary-meta span {
+
+            margin: 0 6px;
+
+            color: #4b5563;
+
+        }
+
+
+        /* ==============================
+           READ LIST
+        ============================== */
+
+        .reads {
+
+            display: flex;
+
+            flex-direction: column;
+
+            gap: 12px;
+
+        }
+
+
+        .read-date-group {
+
+            margin-top: 28px;
+
+            margin-bottom: 10px;
+
+            padding-bottom: 8px;
+
+            color: #9ca3af;
+
+            font-size: 12px;
+
+            font-weight: 700;
+
+            text-transform: uppercase;
+
+            letter-spacing: 0.8px;
+
+            border-bottom: 1px solid #374151;
+
+        }
+
+
+        .read-date-group:first-child {
+
+            margin-top: 5px;
+
+        }
+
+
+        .read-card {
+
+            display: flex;
+
+            align-items: center;
+
+            gap: 18px;
+
+            padding: 18px;
+
+            background: #1f2937;
+
+            border: 1px solid #374151;
+
+            border-radius: 12px;
+
+            transition:
+                background 0.2s ease,
+                transform 0.2s ease;
+
+        }
+
+
+        .read-card:hover {
+
+            background: #273449;
+
+            transform: translateX(3px);
+
+        }
+
+
+        .read-icon {
+
+            width: 44px;
+
+            height: 44px;
+
+            flex-shrink: 0;
+
+            display: flex;
+
+            align-items: center;
+
+            justify-content: center;
+
+            background: #374151;
+
+            border-radius: 50%;
+
+            font-size: 20px;
+
+        }
+
+
+        .read-info {
+
+            flex: 1;
+
+            min-width: 0;
+
+        }
+
+
+        .read-date {
+
+            font-weight: 700;
+
+            color: #f9fafb;
+
+            margin-bottom: 5px;
+
+        }
+
+
+        .read-time {
+
+            color: #9ca3af;
+
+            font-size: 13px;
+
+        }
+
+
+        .read-ip {
+
+            flex-shrink: 0;
+
+            padding: 7px 11px;
+
+            background: #111827;
+
+            border: 1px solid #374151;
+
+            border-radius: 20px;
+
+            color: #9ca3af;
+
+            font-family: monospace;
+
+            font-size: 12px;
+
+        }
+
+
+        /* ==============================
+           EMPTY STATE
+        ============================== */
+
+        .empty {
+
+            padding: 50px 20px;
+
+            text-align: center;
+
+            background: #1f2937;
+
+            border: 1px solid #374151;
+
+            border-radius: 12px;
+
+            color: #9ca3af;
+
+        }
+
+
+        /* ==============================
+           PAGINATION
+        ============================== */
+
+        .pagination {
+
+            display: flex;
+
+            align-items: center;
+
+            justify-content: center;
+
+            gap: 18px;
+
+            margin-top: 25px;
+
+            padding: 18px 0;
+
+        }
+
+
+        .pagination-button {
+
+            display: inline-flex;
+
+            align-items: center;
+
+            justify-content: center;
+
+            padding: 10px 16px;
+
+            background: #1f2937;
+
+            border: 1px solid #374151;
+
+            border-radius: 9px;
+
+            color: #f9fafb;
+
+            text-decoration: none;
+
+            font-size: 13px;
+
+            font-weight: 600;
+
+            transition:
+                background 0.2s ease,
+                border-color 0.2s ease,
+                transform 0.2s ease;
+
+        }
+
+
+        .pagination-button:hover {
+
+            background: #273449;
+
+            border-color: #4b5563;
+
+            transform: translateY(-1px);
+
+        }
+
+
+        .pagination-button.disabled {
+
+            opacity: 0.35;
+
+            cursor: not-allowed;
+
+        }
+
+
+        .pagination-info {
+
+            color: #9ca3af;
+
+            font-size: 13px;
+
+            font-weight: 600;
+
+        }
+
+
+        /* ==============================
+           MOBILE
+        ============================== */
+
+        @media (max-width: 600px) {
+
+            body {
+
+                padding: 25px 15px;
+
+            }
+
+
+            .story-navigation {
+
+                gap: 10px;
+
+                padding: 10px;
+
+            }
+
+
+            .nav-button {
+
+                padding: 8px 10px;
+
+                font-size: 12px;
+
+            }
+
+
+            .nav-title strong {
+
+                max-width: 120px;
+
+            }
+
+
+            .header {
+
+                flex-direction: column;
+
+            }
+
+
+            .count {
+
+                width: 100%;
+
+                text-align: center;
+
+            }
+
+
+            .read-summary {
+
+                grid-template-columns: 1fr;
+
+            }
+
+
+            .read-card {
+
+                align-items: flex-start;
+
+            }
+
+
+            .read-ip {
+
+                margin-left: auto;
+
+            }
+
+
+            .pagination {
+
+                gap: 10px;
+
+            }
+
+
+            .pagination-button {
+
+                padding: 9px 11px;
+
+            }
+
+        }
+
+    </style>
+
+</head>
+
+
+<body>
+
+<div class="container">
+
+
+    <!-- ==============================
+         STORY NAVIGATION
+    ============================== -->
+
+    <div class="story-navigation">
+
+
+        <a
+            href="{{ url_for('manage_stories') }}"
+            class="nav-button"
+        >
+
+            &#8592; Manage Stories
+
+        </a>
+
+
+        <div class="nav-title">
+
+            <span class="nav-label">
+                STORY
+            </span>
+
+
+            <strong>
+                {{ story.title }}
+            </strong>
+
+        </div>
+
+
+        <a
+            href="{{ url_for(
+                'story_analytics',
+                story_id=story.id
+            ) }}"
+            class="nav-button"
+        >
+
+            Analytics &#8594;
+
+        </a>
+
+
+    </div>
+
+
+    <!-- ==============================
+         HEADER
+    ============================== -->
+
+    <div class="header">
+
+
+        <div class="header-content">
+
+            <h1>
+                {{ story.title }}
+            </h1>
+
+
+            <p>
+                Complete read history
+            </p>
+
+        </div>
+
+
+        <div class="count">
+
+            {{ reads|length }} reads
+
+        </div>
+
+
+    </div>
+
+
+    <!-- ==============================
+         READ SUMMARY
+    ============================== -->
+
+    <div class="read-summary">
+
+
+        <div class="summary-card">
+
+            <div class="summary-label">
+
+                Total Reads
+
+            </div>
+
+
+            <div class="summary-value">
+
+                {{ total_reads }}
+
+            </div>
+
+        </div>
+
+
+        <div class="summary-card">
+
+            <div class="summary-label">
+
+                Unique Readers
+
+            </div>
+
+
+            <div class="summary-value">
+
+                {{ unique_readers }}
+
+            </div>
+
+        </div>
+
+
+    </div>
+
+
+    <div class="read-summary-meta">
+
+        {{ total_reads }} total reads
+
+        <span>&#183;</span>
+
+        {{ unique_readers }}
+        unique reader{% if unique_readers != 1 %}s{% endif %}
+
+    </div>
+
+
+    <!-- ==============================
+         READ HISTORY
+    ============================== -->
+
+    <div class="reads">
+
+
+        {% if reads %}
+
+
+            {% for read in reads %}
+
+
+                {% if loop.first or read.date_group != reads[loop.index0 - 1].date_group %}
+
+                    <div class="read-date-group">
+
+                        {{ read.date_group }}
+
+                    </div>
+
+                {% endif %}
+
+
+                <div class="read-card">
+
+
+                    <div class="read-icon">
+
+                        &#128065;
+
+                    </div>
+
+
+                    <div class="read-info">
+
+
+                        <div class="read-date">
+
+                            {{ read.read_at.strftime(
+                                '%B %d, %Y'
+                            ) }}
+
+                        </div>
+
+
+                        <div class="read-time">
+
+                            {{ read.read_at.strftime(
+                                '%I:%M %p'
+                            ) }}
+
+                        </div>
+
+
+                    </div>
+
+
+                    <div class="read-ip">
+
+                        {% if read.ip_address %}
+
+                            {{ read.ip_address }}
+
+                        {% else %}
+
+                            Unknown
+
+                        {% endif %}
+
+                    </div>
+
+
+                </div>
+
+
+            {% endfor %}
+
+
+        {% else %}
+
+
+            <div class="empty">
+
+                No reads recorded yet.
+
+            </div>
+
+
+        {% endif %}
+
+
+    </div>
+
+
+    <!-- ==============================
+         PAGINATION
+    ============================== -->
+
+    {% if pagination.pages > 1 %}
+
+
+        <div class="pagination">
+
+
+            {% if pagination.has_prev %}
+
+
+                <a
+                    href="{{ url_for(
+                        'story_reads',
+                        story_id=story.id,
+                        page=pagination.prev_num
+                    ) }}"
+                    class="pagination-button"
+                >
+
+                    &#8592; Previous
+
+                </a>
+
+
+            {% else %}
+
+
+                <span class="pagination-button disabled">
+
+                    &#8592; Previous
+
+                </span>
+
+
+            {% endif %}
+
+
+            <div class="pagination-info">
+
+                Page {{ pagination.page }}
+                of {{ pagination.pages }}
+
+            </div>
+
+
+            {% if pagination.has_next %}
+
+
+                <a
+                    href="{{ url_for(
+                        'story_reads',
+                        story_id=story.id,
+                        page=pagination.next_num
+                    ) }}"
+                    class="pagination-button"
+                >
+
+                    Next &#8594;
+
+                </a>
+
+
+            {% else %}
+
+
+                <span class="pagination-button disabled">
+
+                    Next &#8594;
+
+                </span>
+
+
+            {% endif %}
+
+
+        </div>
+
+
+    {% endif %}
+
+
+</div>
+
+</body>
+
+</html>

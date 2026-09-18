@@ -1,0 +1,11 @@
+.venv/
+.env
+__pycache__/
+*.pyc
+*.db
+stories.db
+*.zip
+*.backup
+add_ip_column.py
+check_db.py
+check_tables.py

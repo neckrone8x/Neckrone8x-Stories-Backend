@@ -1,0 +1,527 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+
+    <meta charset="UTF-8">
+
+    <meta
+        name="viewport"
+        content="width=device-width, initial-scale=1.0"
+    >
+
+    <title>
+        Create Story — Neckrone8x
+    </title>
+
+
+    <style>
+
+        * {
+            box-sizing: border-box;
+        }
+
+
+        body {
+
+            margin: 0;
+
+            min-height: 100vh;
+
+            font-family: Arial, sans-serif;
+
+            background: #080c14;
+
+            color: #ffffff;
+
+        }
+
+
+        .container {
+
+            width: 100%;
+
+            max-width: 900px;
+
+            margin: auto;
+
+            padding: 40px 20px 70px;
+
+        }
+
+
+        .back {
+
+            color: #00d9ff;
+
+            text-decoration: none;
+
+            display: inline-block;
+
+            margin-bottom: 30px;
+
+            font-size: 14px;
+
+        }
+
+
+        .back:hover {
+
+            text-decoration: underline;
+
+        }
+
+
+        h1 {
+
+            margin: 0 0 8px;
+
+            font-size: 32px;
+
+        }
+
+
+        .subtitle {
+
+            color: #667085;
+
+            margin: 0 0 35px;
+
+            line-height: 1.6;
+
+        }
+
+
+        .form-box {
+
+            background: #0d1320;
+
+            border: 1px solid #202938;
+
+            border-radius: 12px;
+
+            padding: 30px;
+
+        }
+
+
+        .field {
+
+            margin-bottom: 22px;
+
+        }
+
+
+        label {
+
+            display: block;
+
+            margin-bottom: 8px;
+
+            font-weight: bold;
+
+            font-size: 14px;
+
+        }
+
+
+        input,
+        select,
+        textarea {
+
+            width: 100%;
+
+            padding: 13px;
+
+            background: #080c14;
+
+            border: 1px solid #30394a;
+
+            border-radius: 8px;
+
+            color: #ffffff;
+
+            font-family: inherit;
+
+            font-size: 14px;
+
+            outline: none;
+
+        }
+
+
+        input:focus,
+        select:focus,
+        textarea:focus {
+
+            border-color: #00d9ff;
+
+        }
+
+
+        input::placeholder,
+        textarea::placeholder {
+
+            color: #667085;
+
+        }
+
+
+        select {
+
+            cursor: pointer;
+
+        }
+
+
+        textarea {
+
+            min-height: 350px;
+
+            resize: vertical;
+
+            line-height: 1.6;
+
+        }
+
+
+        .error {
+
+            background: #351b20;
+
+            color: #ff8080;
+
+            border: 1px solid #633039;
+
+            padding: 12px;
+
+            border-radius: 8px;
+
+            margin-bottom: 20px;
+
+            line-height: 1.5;
+
+            font-size: 14px;
+
+        }
+
+
+        button {
+
+            width: 100%;
+
+            padding: 14px 25px;
+
+            background: #00d9ff;
+
+            color: #061018;
+
+            border: none;
+
+            border-radius: 8px;
+
+            font-weight: bold;
+
+            font-size: 14px;
+
+            cursor: pointer;
+
+        }
+
+
+        button:hover {
+
+            opacity: 0.85;
+
+        }
+
+
+        button:active {
+
+            opacity: 0.7;
+
+        }
+
+
+        @media (max-width: 600px) {
+
+            .container {
+
+                padding: 25px 15px 50px;
+
+            }
+
+
+            .form-box {
+
+                padding: 20px;
+
+            }
+
+
+            h1 {
+
+                font-size: 28px;
+
+            }
+
+
+            textarea {
+
+                min-height: 280px;
+
+            }
+
+        }
+
+    </style>
+
+</head>
+
+
+<body>
+
+
+    <div class="container">
+
+
+        <!-- BACK TO DASHBOARD -->
+
+        <a
+            href="{{ url_for('dashboard') }}"
+            class="back"
+        >
+
+            ← Back to Dashboard
+
+        </a>
+
+
+        <!-- PAGE HEADER -->
+
+        <h1>
+
+            Create Story
+
+        </h1>
+
+
+        <p class="subtitle">
+
+            Write and publish a new Neckrone8x Story.
+
+        </p>
+
+
+        <!-- ERROR MESSAGE -->
+
+        {% if error %}
+
+            <div class="error">
+
+                {{ error }}
+
+            </div>
+
+        {% endif %}
+
+
+        <div class="form-box">
+
+
+            <form
+                method="POST"
+                action="{{ url_for('create_story') }}"
+            >
+
+
+                <!-- STORY TITLE -->
+
+                <div class="field">
+
+                    <label for="title">
+
+                        Story Title
+
+                    </label>
+
+
+                    <input
+                        type="text"
+                        id="title"
+                        name="title"
+                        placeholder="Enter story title"
+                        maxlength="200"
+                        autocomplete="off"
+                        required
+                        value="{{ request.form.get('title', '') }}"
+                    >
+
+                </div>
+
+
+                <!-- CATEGORY -->
+
+                <div class="field">
+
+                    <label for="category">
+
+                        Category
+
+                    </label>
+
+
+                    {% set selected_category = request.form.get('category', 'General') %}
+
+
+                    <select
+                        id="category"
+                        name="category"
+                    >
+
+                        <option
+                            value="General"
+                            {% if selected_category == 'General' %}selected{% endif %}
+                        >
+                            General
+                        </option>
+
+
+                        <option
+                            value="Confession"
+                            {% if selected_category == 'Confession' %}selected{% endif %}
+                        >
+                            Confession
+                        </option>
+
+
+                        <option
+                            value="Experience"
+                            {% if selected_category == 'Experience' %}selected{% endif %}
+                        >
+                            Experience
+                        </option>
+
+
+                        <option
+                            value="News"
+                            {% if selected_category == 'News' %}selected{% endif %}
+                        >
+                            News
+                        </option>
+
+
+                        <option
+                            value="Relationship"
+                            {% if selected_category == 'Relationship' %}selected{% endif %}
+                        >
+                            Relationship
+                        </option>
+
+                        <option value="Marriage"
+                           {% if selected_category == 'Marriage' %}selected{% endif %}
+                        >
+                            Marriage
+                        </option>
+
+
+                        <option
+                            value="Life"
+                            {% if selected_category == 'Life' %}selected{% endif %}
+                        >
+                            Life
+                        </option>
+
+                        <option
+                            value="Novels"
+                            {% if selected_category == 'Novels' %}selected{% endif %}
+                        >
+                            Novels
+                        </option>
+
+                        <option value="18+"
+                            {% if selected_category == '18+' %}selected{% endif %}
+                        >
+                            18+
+                        </option>
+
+                        <option
+                            value="Other"
+                            {% if selected_category == 'Other' %}selected{% endif %}
+                        >
+                            Other
+                        </option>
+
+                    </select>
+
+                </div>
+
+
+                <!-- AUTHOR -->
+
+                <div class="field">
+
+                    <label for="author">
+
+                        Author
+
+                    </label>
+
+
+                    <input
+                        type="text"
+                        id="author"
+                        name="author"
+                        placeholder="Anonymous"
+                        maxlength="100"
+                        autocomplete="name"
+                        value="{{ request.form.get('author', 'Anonymous') }}"
+                    >
+
+                </div>
+
+
+                <!-- STORY CONTENT -->
+
+                <div class="field">
+
+                    <label for="content">
+
+                        Story Content
+
+                    </label>
+
+
+                    <textarea
+                        id="content"
+                        name="content"
+                        placeholder="Write your story here..."
+                        required
+                    >{{ request.form.get('content', '') }}</textarea>
+
+                </div>
+
+
+                <!-- SUBMIT -->
+
+                <button
+                    type="submit"
+                >
+
+                    Publish Story
+
+                </button>
+
+
+            </form>
+
+
+        </div>
+
+
+    </div>
+
+
+</body>
+
+</html>
