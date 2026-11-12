@@ -454,6 +454,28 @@
                 </div>
 
 
+                <!-- COVER IMAGE -->
+
+                <div class="field">
+
+                    <label for="cover_image">
+
+                        Cover Image Link (optional)
+
+                    </label>
+
+                    <input
+                        type="url"
+                        id="cover_image"
+                        name="cover_image"
+                        value="{{ story.cover_image or '' }}"
+                        maxlength="500"
+                        placeholder="https://..."
+                    >
+
+                </div>
+
+
                 <!-- CONTENT -->
 
                 <div class="field">

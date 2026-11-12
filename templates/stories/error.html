@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="robots" content="noindex">
+    <title>{{ title }} | Neckrone8x Stories</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/stories.css') }}">
+</head>
+
+<body>
+
+    <header class="stories-header">
+        <div class="header-inner">
+            <a href="{{ url_for('stories') }}" class="logo">NECKRONE8X</a>
+            <a href="{{ url_for('stories') }}" class="back-link">&larr; All Stories</a>
+        </div>
+    </header>
+
+    <main class="stories-container">
+        <div class="no-stories">
+            <h2>{{ title }}</h2>
+            <p>{{ message }}</p>
+            <a href="{{ url_for('stories') }}">View All Stories</a>
+        </div>
+    </main>
+
+    <footer>
+        &copy; {{ current_year }} Neckrone8x. All rights reserved.
+    </footer>
+
+</body>
+
+</html>

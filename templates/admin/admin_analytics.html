@@ -2,872 +2,142 @@
 <html lang="en">
 
 <head>
-
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="robots" content="noindex">
 
-    <meta
-        name="viewport"
-        content="width=device-width, initial-scale=1.0"
+    <title>Analytics | Neckrone8x Stories</title>
+
+    <link
+        rel="stylesheet"
+        href="{{ url_for('static', filename='css/admin.css') }}"
     >
-
-    <title>
-        Analytics — Neckrone8x Stories
-    </title>
-
-
-    <style>
-
-        * {
-            box-sizing: border-box;
-        }
-
-
-        body {
-
-            margin: 0;
-
-            background: #080c14;
-
-            color: white;
-
-            font-family: Arial, sans-serif;
-
-        }
-
-
-        .container {
-
-            max-width: 1100px;
-
-            margin: auto;
-
-            padding: 35px 20px 80px;
-
-        }
-
-
-        /* ==================================================
-           TOP BAR
-        ================================================== */
-
-        .top-bar {
-
-            display: flex;
-
-            align-items: center;
-
-            justify-content: space-between;
-
-            gap: 20px;
-
-            margin-bottom: 35px;
-
-        }
-
-
-        .back {
-
-            color: #00d9ff;
-
-            text-decoration: none;
-
-            font-size: 14px;
-
-        }
-
-
-        .back:hover {
-
-            text-decoration: underline;
-
-        }
-
-
-        .brand {
-
-            font-size: 14px;
-
-            font-weight: bold;
-
-            color: #ffffff;
-
-        }
-
-
-        /* ==================================================
-           HEADER
-        ================================================== */
-
-        .header {
-
-            margin-bottom: 35px;
-
-        }
-
-
-        .header h1 {
-
-            margin: 0 0 10px;
-
-            font-size: 34px;
-
-        }
-
-
-        .header p {
-
-            margin: 0;
-
-            color: #667085;
-
-            line-height: 1.6;
-
-        }
-
-
-        /* ==================================================
-           STATISTICS
-        ================================================== */
-
-        .stats {
-
-            display: grid;
-
-            grid-template-columns:
-                repeat(4, 1fr);
-
-            gap: 18px;
-
-            margin-bottom: 20px;
-
-        }
-
-
-        .stat {
-
-            background: #0d1320;
-
-            border: 1px solid #202938;
-
-            border-radius: 14px;
-
-            padding: 24px;
-
-        }
-
-
-        .stat-label {
-
-            color: #667085;
-
-            font-size: 13px;
-
-            margin-bottom: 12px;
-
-        }
-
-
-        .stat-value {
-
-            font-size: 30px;
-
-            font-weight: bold;
-
-            color: #00d9ff;
-
-        }
-
-
-        .stat-description {
-
-            margin-top: 8px;
-
-            color: #667085;
-
-            font-size: 12px;
-
-        }
-
-
-        /* ==================================================
-           TIME PERIOD
-        ================================================== */
-
-        .period-grid {
-
-            display: grid;
-
-            grid-template-columns:
-                repeat(3, 1fr);
-
-            gap: 18px;
-
-            margin-bottom: 35px;
-
-        }
-
-
-        .period {
-
-            background: #0d1320;
-
-            border: 1px solid #202938;
-
-            border-radius: 14px;
-
-            padding: 22px;
-
-        }
-
-
-        .period-label {
-
-            color: #667085;
-
-            font-size: 13px;
-
-            margin-bottom: 10px;
-
-        }
-
-
-        .period-value {
-
-            font-size: 26px;
-
-            font-weight: bold;
-
-            color: #ffffff;
-
-        }
-
-
-        /* ==================================================
-           SECTION
-        ================================================== */
-
-        .section {
-
-            background: #0d1320;
-
-            border: 1px solid #202938;
-
-            border-radius: 14px;
-
-            margin-bottom: 25px;
-
-            overflow: hidden;
-
-        }
-
-
-        .section-header {
-
-            padding: 22px 24px;
-
-            border-bottom: 1px solid #202938;
-
-        }
-
-
-        .section-header h2 {
-
-            margin: 0 0 6px;
-
-            font-size: 20px;
-
-        }
-
-
-        .section-header p {
-
-            margin: 0;
-
-            color: #667085;
-
-            font-size: 13px;
-
-        }
-
-
-        /* ==================================================
-           TOP STORIES
-        ================================================== */
-
-        .story-list {
-
-            padding: 0;
-
-        }
-
-
-        .story-item {
-
-            display: flex;
-
-            align-items: center;
-
-            justify-content: space-between;
-
-            gap: 20px;
-
-            padding: 20px 24px;
-
-            border-bottom: 1px solid #202938;
-
-        }
-
-
-        .story-item:last-child {
-
-            border-bottom: none;
-
-        }
-
-
-        .story-info {
-
-            min-width: 0;
-
-            flex: 1;
-
-        }
-
-
-        .story-title {
-
-            margin-bottom: 7px;
-
-            font-size: 15px;
-
-            font-weight: bold;
-
-            white-space: nowrap;
-
-            overflow: hidden;
-
-            text-overflow: ellipsis;
-
-        }
-
-
-        .story-meta {
-
-            color: #667085;
-
-            font-size: 12px;
-
-        }
-
-
-        .story-reads {
-
-            display: flex;
-
-            align-items: center;
-
-            gap: 7px;
-
-            white-space: nowrap;
-
-        }
-
-
-        .eye {
-
-            font-size: 16px;
-
-        }
-
-
-        .story-reads strong {
-
-            font-size: 15px;
-
-            color: #00d9ff;
-
-        }
-
-
-        .analytics-button {
-
-            display: inline-flex;
-
-            align-items: center;
-
-            justify-content: center;
-
-            padding: 9px 13px;
-
-            background: #111827;
-
-            border: 1px solid #30394a;
-
-            border-radius: 8px;
-
-            color: #d1d5db;
-
-            text-decoration: none;
-
-            font-size: 12px;
-
-            font-weight: bold;
-
-            transition:
-                background 0.2s ease,
-                color 0.2s ease,
-                border-color 0.2s ease;
-
-        }
-
-
-        .analytics-button:hover {
-
-            background: #162333;
-
-            border-color: #00d9ff;
-
-            color: #00d9ff;
-
-        }
-
-
-        /* ==================================================
-           EMPTY STATE
-        ================================================== */
-
-        .empty {
-
-            padding: 35px 24px;
-
-            text-align: center;
-
-            color: #667085;
-
-            font-size: 14px;
-
-        }
-
-
-        /* ==================================================
-           FOOTER
-        ================================================== */
-
-        .footer {
-
-            text-align: center;
-
-            margin-top: 45px;
-
-            color: #667085;
-
-            font-size: 12px;
-
-        }
-
-
-        /* ==================================================
-           RESPONSIVE
-        ================================================== */
-
-        @media (max-width: 850px) {
-
-            .stats {
-
-                grid-template-columns:
-                    repeat(2, 1fr);
-
-            }
-
-        }
-
-
-        @media (max-width: 650px) {
-
-            .container {
-
-                padding:
-                    25px 15px 60px;
-
-            }
-
-
-            .top-bar {
-
-                align-items: flex-start;
-
-            }
-
-
-            .header h1 {
-
-                font-size: 28px;
-
-            }
-
-
-            .stats {
-
-                grid-template-columns: 1fr;
-
-            }
-
-
-            .period-grid {
-
-                grid-template-columns: 1fr;
-
-            }
-
-
-            .story-item {
-
-                align-items: flex-start;
-
-                flex-direction: column;
-
-            }
-
-
-            .story-info {
-
-                width: 100%;
-
-            }
-
-
-            .story-reads {
-
-                width: 100%;
-
-                justify-content: space-between;
-
-            }
-
-
-            .analytics-button {
-
-                width: 100%;
-
-            }
-
-        }
-
-    </style>
-
 </head>
-
 
 <body>
 
+    <div class="admin-shell">
 
-    <div class="container">
+        <aside class="sidebar">
+            <div class="sidebar-logo">
+                NECKRONE8X
+                <span>STORIES</span>
+            </div>
+            <div class="sidebar-title">Administration</div>
+            <nav class="sidebar-menu">
+                <a href="{{ url_for('dashboard') }}">Dashboard</a>
+                <a href="{{ url_for('stories') }}">Stories</a>
+                <a href="{{ url_for('manage_stories') }}">Manage Stories</a>
+                <a href="{{ url_for('create_story') }}">Create Story</a>
+                <a href="{{ url_for('manage_submissions') }}">Submissions</a>
+                <a href="{{ url_for('admin_analytics') }}" class="active">Analytics</a>
+            </nav>
+            <a href="{{ url_for('logout') }}" class="sidebar-logout">Logout</a>
+        </aside>
 
+        <main class="main">
 
-        <!-- ==================================================
-             TOP BAR
-        =================================================== -->
-
-        <div class="top-bar">
-
-
-            <a
-                href="{{ url_for('dashboard') }}"
-                class="back"
-            >
-                ← Back to Dashboard
-            </a>
-
-
-            <div class="brand">
-                NECKRONE8X STORIES
+            <div class="topbar">
+                <div>
+                    <h1>Stories Analytics</h1>
+                    <p>Overall performance of your published Neckrone8x Stories.</p>
+                </div>
             </div>
 
 
-        </div>
+            <section class="stats">
 
-
-
-        <!-- ==================================================
-             HEADER
-        =================================================== -->
-
-        <header class="header">
-
-            <h1>
-                Stories Analytics
-            </h1>
-
-
-            <p>
-                Overall performance of your published
-                Neckrone8x Stories.
-            </p>
-
-        </header>
-
-
-
-        <!-- ==================================================
-             MAIN STATISTICS
-        =================================================== -->
-
-        <section class="stats">
-
-
-            <div class="stat">
-
-                <div class="stat-label">
-                    Total Reads
+                <div class="stat">
+                    <div class="stat-label">Total Reads</div>
+                    <div class="stat-value">{{ total_reads }}</div>
                 </div>
 
-                <div class="stat-value">
-                    {{ total_reads }}
+                <div class="stat">
+                    <div class="stat-label">Published Stories</div>
+                    <div class="stat-value">{{ total_stories }}</div>
                 </div>
 
-                <div class="stat-description">
-                    Across all published stories
+                <div class="stat">
+                    <div class="stat-label">Unique Readers</div>
+                    <div class="stat-value">{{ unique_readers }}</div>
                 </div>
 
-            </div>
-
-
-
-            <div class="stat">
-
-                <div class="stat-label">
-                    Published Stories
+                <div class="stat">
+                    <div class="stat-label">Reads per Reader</div>
+                    <div class="stat-value">{{ reads_per_reader }}</div>
                 </div>
 
-                <div class="stat-value">
-                    {{ total_stories }}
+            </section>
+
+
+            <section class="period-grid">
+
+                <div class="period">
+                    <div class="period-label">Today</div>
+                    <div class="period-value">{{ today_reads }}</div>
                 </div>
 
-                <div class="stat-description">
-                    Stories currently published
+                <div class="period">
+                    <div class="period-label">This Week</div>
+                    <div class="period-value">{{ week_reads }}</div>
                 </div>
 
-            </div>
-
-
-
-            <div class="stat">
-
-                <div class="stat-label">
-                    Unique Readers
+                <div class="period">
+                    <div class="period-label">This Month</div>
+                    <div class="period-value">{{ month_reads }}</div>
                 </div>
 
-                <div class="stat-value">
-                    {{ unique_readers }}
+            </section>
+
+
+            <section class="section">
+
+                <div class="section-header">
+                    <div>
+                        <h2>Top Stories</h2>
+                        <p>Your most-read published stories.</p>
+                    </div>
                 </div>
 
-                <div class="stat-description">
-                    Unique IP addresses recorded
-                </div>
-
-            </div>
-
-
-
-            <div class="stat">
-
-                <div class="stat-label">
-                    Reads Per Reader
-                </div>
-
-                <div class="stat-value">
-                    {{ reads_per_reader }}
-                </div>
-
-                <div class="stat-description">
-                    Average reads per reader
-                </div>
-
-            </div>
-
-
-        </section>
-
-
-
-        <!-- ==================================================
-             TIME PERIODS
-        =================================================== -->
-
-        <section class="period-grid">
-
-
-            <div class="period">
-
-                <div class="period-label">
-                    Today
-                </div>
-
-                <div class="period-value">
-                    {{ today_reads }}
-                </div>
-
-            </div>
-
-
-
-            <div class="period">
-
-                <div class="period-label">
-                    This Week
-                </div>
-
-                <div class="period-value">
-                    {{ week_reads }}
-                </div>
-
-            </div>
-
-
-
-            <div class="period">
-
-                <div class="period-label">
-                    This Month
-                </div>
-
-                <div class="period-value">
-                    {{ month_reads }}
-                </div>
-
-            </div>
-
-
-        </section>
-
-
-
-        <!-- ==================================================
-             TOP STORIES
-        =================================================== -->
-
-        <section class="section">
-
-
-            <div class="section-header">
-
-                <h2>
-                    Top Stories
-                </h2>
-
-                <p>
-                    Your most-read published stories.
-                </p>
-
-            </div>
-
-
-
-            {% if top_stories %}
-
-
-                <div class="story-list">
-
+                {% if top_stories %}
 
                     {% for story in top_stories %}
 
+                        <div class="story">
 
-                        <div class="story-item">
-
-
-                            <div class="story-info">
-
-
-                                <div class="story-title">
-
-                                    {{ story.title }}
-
-                                </div>
-
-
+                            <div>
+                                <div class="story-title">{{ story.title }}</div>
                                 <div class="story-meta">
-
-                                    {{ story.category }}
-
-                                    ·
-
-                                    {{ story.author }}
-
+                                    {{ story.category }} ·
+                                    {{ story.author }} ·
+                                    {{ story.read_count }} reads
                                 </div>
-
-
                             </div>
 
-
-
-                            <div class="story-reads">
-
-
-                                <span class="eye">
-                                    &#128065;
-                                </span>
-
-
-                                <strong>
-                                    {{ story.read_count }}
-                                </strong>
-
-
-                                <span>
-                                    reads
-                                </span>
-
-
+                            <div class="story-actions">
                                 <a
                                     href="{{ url_for('story_analytics', story_id=story.id) }}"
-                                    class="analytics-button"
+                                    class="open-story"
                                 >
                                     Detailed Analytics →
                                 </a>
-
-
                             </div>
-
 
                         </div>
 
-
                     {% endfor %}
 
+                {% else %}
 
-                </div>
+                    <div class="empty-state">No published stories yet.</div>
 
+                {% endif %}
 
-            {% else %}
+            </section>
 
-
-                <div class="empty">
-
-                    No published stories yet.
-
-                </div>
-
-
-            {% endif %}
-
-
-        </section>
-
-
-
-        <!-- ==================================================
-             FOOTER
-        =================================================== -->
-
-        <div class="footer">
-
-            © Neckrone8x. All rights reserved.
-
-        </div>
-
+        </main>
 
     </div>
-
 
 </body>
 

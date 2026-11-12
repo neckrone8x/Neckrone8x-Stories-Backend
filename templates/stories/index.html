@@ -228,9 +228,9 @@
 
                             <p class="story-preview">
 
-                                {{ story.content[:180] }}
+                                {% if story.category == "18+" %}Adult story. You will be asked to confirm your age before reading.{% else %}{{ story.content[:180] }}{% endif %}
 
-                                {% if story.content|length > 180 %}
+                                {% if story.category != "18+" and story.content|length > 180 %}
                                     ...
                                 {% endif %}
 

@@ -1,5 +1,9 @@
 from flask import (
     Flask,
+    Response,
+    abort,
+    jsonify,
+    make_response,
     render_template,
     request,
     redirect,
@@ -18,6 +22,15 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+from site_security import (
+    COMMENT_MAX, COMMENT_NAME_MAX, AUTHOR_MAX, CATEGORIES, CONTENT_MAX,
+    TITLE_MAX, admin_required, canonical_category, check_admin_credentials,
+    clean_category, clean_text, configure_security, feed_authorized,
+    like_escape, login_blocked, login_failed, make_excerpt, make_slug,
+    rate_ok, reading_minutes, safe_https_url, start_admin_session,
+    visitor_key,
+)
+
 
 # ============================================================
 # APP CONFIGURATION
@@ -25,12 +38,10 @@ load_dotenv()
 
 app = Flask(__name__)
 
-app.secret_key = os.getenv("SECRET_KEY")
-
-if not app.secret_key:
-    if os.getenv("FLASK_ENV") == "production":
-        raise RuntimeError("SECRET_KEY must be set in production")
-    app.secret_key = "neckrone8x-development-secret-key"
+# Secret key, admin login check, safe cookies, same-site form checks and
+# security headers all live in site_security.py. On Render the site refuses to
+# start unless SECRET_KEY, ADMIN_USERNAME and an admin password are set.
+configure_security(app)
 
 
 # ============================================================
@@ -47,20 +58,10 @@ def inject_template_globals():
 # ============================================================
 
 def get_visitor_ip():
-
-    cloudflare_ip = request.headers.get("CF-Connecting-IP")
-
-    if cloudflare_ip:
-        cloudflare_ip = cloudflare_ip.strip()
-        if cloudflare_ip:
-            return cloudflare_ip
-
-    remote_ip = request.remote_addr
-
-    if remote_ip:
-        return remote_ip.strip()
-
-    return "unknown"
+    """Who is reading. Despite the old name this is NOT the IP address: it is a
+    private key made from a random cookie (many people on a mobile network
+    share one IP), and only a keyed hash of it is stored."""
+    return visitor_key()
 
 
 # ============================================================
@@ -184,7 +185,7 @@ def home():
 @app.route("/stories")
 def stories():
 
-    search = request.args.get("search", "").strip()
+    search = request.args.get("search", "").strip()[:100]
     category = request.args.get("category", "").strip()
     page = request.args.get("page", 1, type=int)
 
@@ -194,18 +195,18 @@ def stories():
     query = Story.query.filter_by(published=True)
 
     if search:
-        search_pattern = f"%{search}%"
+        search_pattern = f"%{like_escape(search)}%"
         query = query.filter(
             db.or_(
-                Story.title.ilike(search_pattern),
-                Story.author.ilike(search_pattern),
-                Story.category.ilike(search_pattern),
-                Story.content.ilike(search_pattern)
+                Story.title.ilike(search_pattern, escape="\\"),
+                Story.author.ilike(search_pattern, escape="\\"),
+                Story.category.ilike(search_pattern, escape="\\"),
+                Story.content.ilike(search_pattern, escape="\\")
             )
         )
 
-    if category:
-        query = query.filter(Story.category.ilike(category))
+    if canonical_category(category):
+        query = query.filter(Story.category == canonical_category(category))
 
     pagination = query.order_by(Story.created_at.desc()).paginate(
         page=page, per_page=6, error_out=False
@@ -253,20 +254,20 @@ def view_story(slug):
         ip_address=visitor_ip
     ).first()
 
-    if not existing_read:
+    if not existing_read and rate_ok("read", 40, 3600):
         story.read_count = (story.read_count or 0) + 1
         db.session.add(StoryRead(story_id=story.id, ip_address=visitor_ip))
         db.session.commit()
 
     # REACTIONS
     reaction_types = ["love", "like", "laugh", "wow", "sad"]
-    reaction_counts = {}
+    reaction_counts = {rtype: 0 for rtype in reaction_types}
 
-    for rtype in reaction_types:
-        reaction_counts[rtype] = Reaction.query.filter_by(
-            story_id=story.id,
-            reaction_type=rtype
-        ).count()
+    for rtype, total in db.session.query(
+        Reaction.reaction_type, db.func.count(Reaction.id)
+    ).filter(Reaction.story_id == story.id).group_by(Reaction.reaction_type).all():
+        if rtype in reaction_counts:
+            reaction_counts[rtype] = total
 
     user_reaction = Reaction.query.filter_by(
         story_id=story.id,
@@ -281,13 +282,16 @@ def view_story(slug):
         approved=True
     ).order_by(Comment.created_at.desc()).all()
 
-    return render_template(
+    response = make_response(render_template(
         "stories/story.html",
         story=story,
         reaction_counts=reaction_counts,
         user_reaction_type=user_reaction_type,
         comments=comments
-    )
+    ))
+    if story.category == "18+":
+        response.headers["X-Robots-Tag"] = "noindex, nofollow"
+    return response
 
 
 # ============================================================
@@ -327,6 +331,9 @@ def react_to_story(slug, reaction_type):
     if reaction_type not in {"love", "like", "laugh", "wow", "sad"}:
         return redirect(url_for("view_story", slug=slug))
 
+    if not rate_ok("react", 60, 3600):
+        return redirect(url_for("view_story", slug=slug) + "#reactions")
+
     visitor_ip = get_visitor_ip()
 
     existing = Reaction.query.filter_by(
@@ -362,20 +369,24 @@ def add_comment(slug):
 
     story = Story.query.filter_by(slug=slug, published=True).first_or_404()
 
-    name = (request.form.get("name", "") or "").strip()
-    content = (request.form.get("content", "") or "").strip()
+    name = clean_text(request.form.get("name"), COMMENT_NAME_MAX)
+    content = clean_text(request.form.get("content"), COMMENT_MAX)
 
-    if not content:
+    if not content or not rate_ok("comment", 5, 600):
         return redirect(url_for("view_story", slug=slug) + "#comments")
 
     if not name:
         name = "Anonymous"
 
+    # A comment with a link is held back (spam); all others show at once.
+    has_link = bool(re.search(r"https?://|www\.", content, re.I))
+
     db.session.add(Comment(
         story_id=story.id,
-        name=name[:80],
+        name=name,
         content=content,
-        ip_address=get_visitor_ip()
+        ip_address=get_visitor_ip(),
+        approved=not has_link
     ))
     db.session.commit()
 
@@ -391,10 +402,17 @@ def submit_story():
 
     if request.method == "POST":
 
-        title = request.form.get("title", "").strip()
-        category = request.form.get("category", "General").strip()
-        content = request.form.get("content", "").strip()
-        author = request.form.get("author", "Anonymous").strip()
+        if not rate_ok("submit", 5, 3600):
+            return render_template(
+                "stories/submit.html",
+                error="You have sent several stories already. "
+                      "Please try again in a while."
+            ), 429
+
+        title = clean_text(request.form.get("title"), TITLE_MAX)
+        category = clean_category(request.form.get("category"))
+        content = clean_text(request.form.get("content"), CONTENT_MAX)
+        author = clean_text(request.form.get("author"), AUTHOR_MAX)
 
         if not title or not content:
             return render_template(
@@ -402,20 +420,14 @@ def submit_story():
                 error="Title and story content are required."
             )
 
-        slug = re.sub(r"[^a-z0-9]+", "-", title.lower()).strip("-")
-        if not slug:
-            slug = "story"
-
-        original_slug = slug
-        counter = 2
-        while Story.query.filter_by(slug=slug).first():
-            slug = original_slug + "-" + str(counter)
-            counter += 1
+        slug = make_slug(
+            title, lambda x: Story.query.filter_by(slug=x).first() is not None
+        )
 
         story = Story(
             title=title,
             slug=slug,
-            category=(category or "General"),
+            category=category,
             content=content,
             author=(author or "Anonymous"),
             published=False,
@@ -478,23 +490,20 @@ def login():
 
     if request.method == "POST":
 
+        if login_blocked():
+            return render_template(
+                "admin/login.html",
+                error="Too many wrong attempts. Please try again in 15 minutes."
+            ), 429
+
         username = request.form.get("username", "").strip()
         password = request.form.get("password", "")
 
-        admin_username = os.getenv("ADMIN_USERNAME")
-        admin_password = os.getenv("ADMIN_PASSWORD")
-
-        if not admin_username or not admin_password:
-            if os.getenv("FLASK_ENV") == "production":
-                raise RuntimeError(
-                    "ADMIN_USERNAME and ADMIN_PASSWORD must be set in production"
-                )
-            admin_username = admin_username or "admin"
-            admin_password = admin_password or "admin123"
-
-        if username == admin_username and password == admin_password:
-            session["admin_logged_in"] = True
+        if check_admin_credentials(username, password):
+            start_admin_session()
             return redirect(url_for("dashboard"))
+
+        login_failed()
 
         return render_template(
             "admin/login.html",
@@ -519,10 +528,8 @@ def logout():
 # ============================================================
 
 @app.route("/admin")
+@admin_required
 def dashboard():
-
-    if not session.get("admin_logged_in"):
-        return redirect(url_for("login"))
 
     published_count = Story.query.filter_by(published=True).count()
     pending_count = Story.query.filter_by(published=False).count()
@@ -569,17 +576,16 @@ def dashboard():
 # ============================================================
 
 @app.route("/admin/create-story", methods=["GET", "POST"])
+@admin_required
 def create_story():
-
-    if not session.get("admin_logged_in"):
-        return redirect(url_for("login"))
 
     if request.method == "POST":
 
-        title = request.form.get("title", "").strip()
-        category = request.form.get("category", "General").strip()
-        content = request.form.get("content", "").strip()
-        author = request.form.get("author", "Anonymous").strip()
+        title = clean_text(request.form.get("title"), TITLE_MAX)
+        category = clean_category(request.form.get("category"))
+        content = clean_text(request.form.get("content"), CONTENT_MAX)
+        author = clean_text(request.form.get("author"), AUTHOR_MAX)
+        cover_image = safe_https_url(request.form.get("cover_image"))
         published = (request.form.get("published") == "on")
 
         if not title or not content:
@@ -588,22 +594,17 @@ def create_story():
                 error="Title and story content are required."
             )
 
-        slug = re.sub(r"[^a-z0-9]+", "-", title.lower()).strip("-")
-        if not slug:
-            slug = "story"
-
-        original_slug = slug
-        counter = 2
-        while Story.query.filter_by(slug=slug).first():
-            slug = original_slug + "-" + str(counter)
-            counter += 1
+        slug = make_slug(
+            title, lambda x: Story.query.filter_by(slug=x).first() is not None
+        )
 
         story = Story(
             title=title,
             slug=slug,
-            category=(category or "General"),
+            category=category,
             content=content,
             author=(author or "Anonymous"),
+            cover_image=cover_image,
             published=published,
             read_count=0
         )
@@ -621,10 +622,8 @@ def create_story():
 # ============================================================
 
 @app.route("/admin/stories")
+@admin_required
 def manage_stories():
-
-    if not session.get("admin_logged_in"):
-        return redirect(url_for("login"))
 
     stories = Story.query.filter_by(published=True).order_by(
         Story.created_at.desc()
@@ -638,10 +637,8 @@ def manage_stories():
 # ============================================================
 
 @app.route("/admin/submissions")
+@admin_required
 def manage_submissions():
-
-    if not session.get("admin_logged_in"):
-        return redirect(url_for("login"))
 
     submissions = Story.query.filter_by(published=False).order_by(
         Story.created_at.desc()
@@ -655,10 +652,8 @@ def manage_submissions():
 # ============================================================
 
 @app.route("/admin/stories/review/<int:story_id>")
+@admin_required
 def review_story(story_id):
-
-    if not session.get("admin_logged_in"):
-        return redirect(url_for("login"))
 
     story = Story.query.get_or_404(story_id)
 
@@ -670,10 +665,8 @@ def review_story(story_id):
 # ============================================================
 
 @app.route("/admin/stories/approve/<int:story_id>", methods=["POST"])
+@admin_required
 def approve_story(story_id):
-
-    if not session.get("admin_logged_in"):
-        return redirect(url_for("login"))
 
     story = Story.query.get_or_404(story_id)
     story.published = True
@@ -687,19 +680,17 @@ def approve_story(story_id):
 # ============================================================
 
 @app.route("/admin/stories/edit/<int:story_id>", methods=["GET", "POST"])
+@admin_required
 def edit_story(story_id):
-
-    if not session.get("admin_logged_in"):
-        return redirect(url_for("login"))
 
     story = Story.query.get_or_404(story_id)
 
     if request.method == "POST":
 
-        title = request.form.get("title", "").strip()
-        category = request.form.get("category", "General").strip()
-        content = request.form.get("content", "").strip()
-        author = request.form.get("author", "Anonymous").strip()
+        title = clean_text(request.form.get("title"), TITLE_MAX)
+        category = clean_category(request.form.get("category"))
+        content = clean_text(request.form.get("content"), CONTENT_MAX)
+        author = clean_text(request.form.get("author"), AUTHOR_MAX)
 
         if not title or not content:
             return render_template(
@@ -709,9 +700,10 @@ def edit_story(story_id):
             )
 
         story.title = title
-        story.category = (category or "General")
+        story.category = category
         story.content = content
         story.author = (author or "Anonymous")
+        story.cover_image = safe_https_url(request.form.get("cover_image"))
 
         db.session.commit()
 
@@ -725,10 +717,8 @@ def edit_story(story_id):
 # ============================================================
 
 @app.route("/admin/stories/analytics/<int:story_id>")
+@admin_required
 def story_analytics(story_id):
-
-    if not session.get("admin_logged_in"):
-        return redirect(url_for("login"))
 
     story = Story.query.get_or_404(story_id)
 
@@ -874,10 +864,8 @@ def story_analytics(story_id):
 # ============================================================
 
 @app.route("/admin/analytics")
+@admin_required
 def admin_analytics():
-
-    if not session.get("admin_logged_in"):
-        return redirect(url_for("login"))
 
     total_reads = db.session.query(
         db.func.sum(Story.read_count)
@@ -966,10 +954,8 @@ def admin_analytics():
 # ============================================================
 
 @app.route("/admin/stories/reads/<int:story_id>")
+@admin_required
 def story_reads(story_id):
-
-    if not session.get("admin_logged_in"):
-        return redirect(url_for("login"))
 
     story = Story.query.get_or_404(story_id)
 
@@ -1041,10 +1027,8 @@ def story_reads(story_id):
 # ============================================================
 
 @app.route("/admin/stories/delete/<int:story_id>", methods=["POST"])
+@admin_required
 def delete_story(story_id):
-
-    if not session.get("admin_logged_in"):
-        return redirect(url_for("login"))
 
     story = Story.query.get_or_404(story_id)
     db.session.delete(story)
@@ -1058,10 +1042,8 @@ def delete_story(story_id):
 # ============================================================
 
 @app.route("/admin/stories/toggle/<int:story_id>", methods=["POST"])
+@admin_required
 def toggle_story(story_id):
-
-    if not session.get("admin_logged_in"):
-        return redirect(url_for("login"))
 
     story = Story.query.get_or_404(story_id)
     story.published = not story.published
@@ -1075,10 +1057,8 @@ def toggle_story(story_id):
 # ============================================================
 
 @app.route("/admin/comments/delete/<int:comment_id>", methods=["POST"])
+@admin_required
 def delete_comment(comment_id):
-
-    if not session.get("admin_logged_in"):
-        return redirect(url_for("login"))
 
     comment = Comment.query.get_or_404(comment_id)
     db.session.delete(comment)
@@ -1088,11 +1068,170 @@ def delete_comment(comment_id):
 
 
 # ============================================================
-# CREATE DATABASE TABLES
+# STORY FEED  (read by the Mkuu AI server; never includes 18+ stories or
+# the full text, only a short excerpt and a link to the story)
+# ============================================================
+
+def feed_item(story, excerpt_chars):
+    cover = safe_https_url(story.cover_image)
+    return {
+        "id": story.id,
+        "slug": story.slug,
+        "title": story.title,
+        "author": story.author,
+        "category": story.category,
+        "excerpt": make_excerpt(story.content, excerpt_chars),
+        "reading_minutes": reading_minutes(story.content),
+        "url": url_for("view_story", slug=story.slug, _external=True),
+        "cover_image": cover,
+        "published_at": story.created_at.isoformat() + "Z",
+        "updated_at": (story.updated_at or story.created_at).isoformat() + "Z",
+    }
+
+
+def feed_query():
+    return Story.query.filter(Story.published == True, Story.category != "18+")
+
+
+@app.route("/api/stories")
+def api_stories():
+
+    if not feed_authorized(request.headers):
+        return jsonify(error="unauthorized"), 401
+
+    if not rate_ok("feed", 60, 60):
+        return jsonify(error="too many requests"), 429
+
+    limit = min(max(request.args.get("limit", 50, type=int), 1), 100)
+    page = max(request.args.get("page", 1, type=int), 1)
+    excerpt_chars = min(max(request.args.get("excerpt", 240, type=int), 100), 600)
+
+    pagination = feed_query().order_by(
+        Story.updated_at.desc(), Story.id.desc()
+    ).paginate(page=page, per_page=limit, error_out=False)
+
+    response = jsonify({
+        "stories": [feed_item(x, excerpt_chars) for x in pagination.items],
+        "page": page,
+        "pages": pagination.pages,
+        "total": pagination.total,
+    })
+    response.headers["Cache-Control"] = "public, max-age=300"
+    return response
+
+
+@app.route("/api/stories/<slug>")
+def api_story(slug):
+
+    if not feed_authorized(request.headers):
+        return jsonify(error="unauthorized"), 401
+
+    if not rate_ok("feed", 60, 60):
+        return jsonify(error="too many requests"), 429
+
+    story = feed_query().filter(Story.slug == slug).first()
+    if story is None:
+        return jsonify(error="not found"), 404
+
+    excerpt_chars = min(max(request.args.get("excerpt", 240, type=int), 100), 600)
+    return jsonify(feed_item(story, excerpt_chars))
+
+
+@app.route("/health")
+def health():
+    return {"ok": True}
+
+
+@app.route("/robots.txt")
+def robots():
+    body = (
+        "User-agent: *\n"
+        "Disallow: /admin\n"
+        "Disallow: /api/\n"
+        "Allow: /\n"
+        "Sitemap: " + url_for("sitemap", _external=True) + "\n"
+    )
+    return Response(body, mimetype="text/plain")
+
+
+@app.route("/sitemap.xml")
+def sitemap():
+    from xml.sax.saxutils import escape
+
+    rows = feed_query().order_by(Story.updated_at.desc()).limit(5000).all()
+    items = ["<url><loc>%s</loc></url>" % escape(
+        url_for("stories", _external=True))]
+    for story in rows:
+        stamp = (story.updated_at or story.created_at).strftime("%Y-%m-%d")
+        items.append("<url><loc>%s</loc><lastmod>%s</lastmod></url>" % (
+            escape(url_for("view_story", slug=story.slug, _external=True)),
+            stamp))
+    xml = (
+        '<?xml version="1.0" encoding="UTF-8"?>'
+        '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">'
+        + "".join(items) + "</urlset>"
+    )
+    return Response(xml, mimetype="application/xml")
+
+
+# ============================================================
+# FRIENDLY ERROR PAGES
+# ============================================================
+
+def error_page(code, title, message):
+    if request.path.startswith("/api/"):
+        return jsonify(error=title), code
+    return render_template(
+        "stories/error.html", code=code, title=title, message=message
+    ), code
+
+
+@app.errorhandler(403)
+def forbidden(error):
+    return error_page(
+        403, "Not allowed",
+        "This request could not be verified. Go back, refresh the page and try again."
+    )
+
+
+@app.errorhandler(404)
+def not_found(error):
+    return error_page(
+        404, "Story not found",
+        "That page does not exist, or the story is no longer published."
+    )
+
+
+@app.errorhandler(413)
+def too_large(error):
+    return error_page(413, "Too long", "That text is too long to send.")
+
+
+@app.errorhandler(500)
+def server_error(error):
+    return error_page(
+        500, "Something went wrong", "Please try again in a moment."
+    )
+
+
+# ============================================================
+# CREATE DATABASE TABLES (and the indexes that keep the site fast)
 # ============================================================
 
 with app.app_context():
     db.create_all()
+
+    for statement in (
+        "CREATE INDEX IF NOT EXISTS ix_stories_pub_created ON stories (published, created_at)",
+        "CREATE INDEX IF NOT EXISTS ix_story_reads_story ON story_reads (story_id, ip_address)",
+        "CREATE INDEX IF NOT EXISTS ix_reactions_story ON reactions (story_id, ip_address)",
+        "CREATE INDEX IF NOT EXISTS ix_comments_story ON comments (story_id, approved)",
+    ):
+        try:
+            db.session.execute(db.text(statement))
+            db.session.commit()
+        except Exception:
+            db.session.rollback()
 
 
 # ============================================================
