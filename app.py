@@ -26,6 +26,7 @@ from site_security import (
     COMMENT_MAX, COMMENT_NAME_MAX, AUTHOR_MAX, CATEGORIES, CONTENT_MAX,
     TITLE_MAX, admin_required, canonical_category, check_admin_credentials,
     clean_category, clean_text, configure_security, feed_authorized,
+    feed_authorized_strict,
     like_escape, login_blocked, login_failed, make_excerpt, make_slug,
     rate_ok, reading_minutes, safe_https_url, start_admin_session,
     visitor_key,
@@ -1134,7 +1135,19 @@ def api_story(slug):
         return jsonify(error="not found"), 404
 
     excerpt_chars = min(max(request.args.get("excerpt", 240, type=int), 100), 600)
-    return jsonify(feed_item(story, excerpt_chars))
+    item = feed_item(story, excerpt_chars)
+
+    # The Mkuu helper bubble needs the story's text. Only Mkuu's server, which
+    # has the token, may ask for it (?full=1).
+    if request.args.get("full") == "1":
+        if not feed_authorized_strict(request.headers):
+            return jsonify(error="unauthorized"), 401
+        item["content"] = story.content[:12000]
+        response = jsonify(item)
+        response.headers["Cache-Control"] = "no-store"
+        return response
+
+    return jsonify(item)
 
 
 @app.route("/health")

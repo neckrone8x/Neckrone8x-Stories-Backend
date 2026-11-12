@@ -311,3 +311,13 @@ def feed_authorized(headers) -> bool:
         return True
     return hmac.compare_digest((headers.get("X-Feed-Token", "") or "").encode(),
                                token.encode())
+
+
+def feed_authorized_strict(headers) -> bool:
+    """Like feed_authorized, but the token MUST be set. Used for the full text
+    of a story, which only the Mkuu server (with the token) may read."""
+    token = os.getenv("FEED_TOKEN", "")
+    if not token:
+        return False
+    return hmac.compare_digest((headers.get("X-Feed-Token", "") or "").encode(),
+                               token.encode())

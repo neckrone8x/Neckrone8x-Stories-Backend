@@ -263,6 +263,18 @@ class TextTests(unittest.TestCase):
             self.assertIsNone(S.safe_https_url(bad), bad)
         self.assertEqual(S.like_escape("100%_x\\"), "100\\%\\_x\\\\")
 
+    def test_the_full_story_text_always_needs_the_token(self):
+        os.environ.pop("FEED_TOKEN", None)
+        self.assertFalse(S.feed_authorized_strict({}))                     # no token set: closed
+        self.assertFalse(S.feed_authorized_strict({"X-Feed-Token": ""}))
+        os.environ["FEED_TOKEN"] = "tok-123"
+        try:
+            self.assertFalse(S.feed_authorized_strict({}))
+            self.assertFalse(S.feed_authorized_strict({"X-Feed-Token": "wrong"}))
+            self.assertTrue(S.feed_authorized_strict({"X-Feed-Token": "tok-123"}))
+        finally:
+            os.environ.pop("FEED_TOKEN", None)
+
     def test_feed_token(self):
         os.environ.pop("FEED_TOKEN", None)
         self.assertTrue(S.feed_authorized({}))

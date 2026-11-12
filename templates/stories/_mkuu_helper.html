@@ -1,0 +1,11 @@
+{# The Mkuu helper bubble. It is left out of 18+ stories. #}
+{% set _adult = (story is defined and story and story.category == '18+') %}
+{% if not _adult %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/mkuu-helper.css') }}?v=1">
+<script
+    src="{{ url_for('static', filename='js/mkuu-helper.js') }}?v=1"
+    defer
+    data-api="https://mkuu.neckrone8x.co.ke"
+    {% if story is defined and story %}data-story="{{ story.slug }}"{% endif %}
+></script>
+{% endif %}
