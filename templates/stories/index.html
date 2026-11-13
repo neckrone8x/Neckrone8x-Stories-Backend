@@ -17,6 +17,7 @@
         href="{{ url_for('static', filename='css/stories.css') }}"
     >
 
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/verified.css') }}">
 </head>
 
 <body>
@@ -244,7 +245,7 @@
                             <div class="story-meta">
 
                                 <span>
-                                    {{ story.author }}
+                                    {{ story.author }}{% include 'stories/_verified_mark.html' %}
                                 </span>
 
                                 <span>

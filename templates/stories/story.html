@@ -45,6 +45,7 @@
         rel="stylesheet"
         href="{{ url_for('static', filename='css/stories.css') }}"
     >
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/verified.css') }}">
 </head>
 
 <body>
@@ -81,7 +82,7 @@
             </h1>
 
             <div class="story-page-meta">
-                <span>By {{ story.author }}</span>
+                <span>By {{ story.author }}{% include 'stories/_verified_mark.html' %}</span>
                 <span class="meta-separator">•</span>
                 <span>{{ story.created_at.strftime('%B %d, %Y') }}</span>
                 <span class="meta-separator">•</span>

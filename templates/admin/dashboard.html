@@ -17,6 +17,7 @@
         rel="stylesheet"
         href="{{ url_for('static', filename='css/admin.css') }}"
     >
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/verified.css') }}">
 </head>
 
 <body>
@@ -132,7 +133,7 @@
                                 </div>
                                 <div class="story-meta">
                                     {{ story.category }} ·
-                                    {{ story.author }} ·
+                                    {{ story.author }}{% include 'admin/_tier.html' %} ·
                                     {{ story.created_at.strftime('%B %d, %Y') }}
                                 </div>
                             </div>

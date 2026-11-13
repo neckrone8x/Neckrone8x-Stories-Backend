@@ -102,6 +102,9 @@ class Story(db.Model):
     content = db.Column(db.Text, nullable=False)
     author = db.Column(db.String(100), nullable=False, default="Anonymous")
     cover_image = db.Column(db.String(500), nullable=True)
+    # Set when the story was shared from the Mkuu app by a verified member
+    verified_tier = db.Column(db.String(16), nullable=True)
+    show_mark = db.Column(db.Boolean, default=True)
     published = db.Column(db.Boolean, default=False)
     read_count = db.Column(db.Integer, default=0)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
@@ -555,9 +558,7 @@ def dashboard():
         Story.read_count.desc()
     ).limit(5).all()
 
-    pending_stories = Story.query.filter_by(published=False).order_by(
-        Story.created_at.desc()
-    ).all()
+    pending_stories = pending_in_review_order()
 
     return render_template(
         "admin/dashboard.html",
@@ -637,13 +638,22 @@ def manage_stories():
 # MANAGE SUBMISSIONS
 # ============================================================
 
+def pending_in_review_order():
+    """Pending stories: verified members first (founder, developer, paid), then
+    everyone else. Newest first inside each group. Sorted here, not in SQL, so it
+    works with any version of the database library (the queue is small)."""
+    rank = {"founder": 0, "developer": 1, "paid": 2}
+    stories = Story.query.filter_by(published=False).all()
+    stories.sort(key=lambda s: s.created_at or datetime.min, reverse=True)
+    stories.sort(key=lambda s: rank.get(s.verified_tier or "", 3))
+    return stories
+
+
 @app.route("/admin/submissions")
 @admin_required
 def manage_submissions():
 
-    submissions = Story.query.filter_by(published=False).order_by(
-        Story.created_at.desc()
-    ).all()
+    submissions = pending_in_review_order()
 
     return render_template("admin/submissions.html", submissions=submissions)
 
@@ -1175,6 +1185,62 @@ def api_story_text(slug):
     return response
 
 
+@app.route("/api/submissions", methods=["POST"])
+def api_submissions():
+    """A story shared from the Mkuu app. Only Mkuu's server (which has FEED_TOKEN)
+    may use this. It is ALWAYS saved as pending, never published. A verified
+    member's story carries their tier, so it is reviewed first."""
+    import hmac
+    import re as _re
+
+    from site_security import limiter
+
+    token = os.getenv("FEED_TOKEN", "")
+    given = request.headers.get("X-Feed-Token", "") or ""
+    if not token or not hmac.compare_digest(given.encode(), token.encode()):
+        return jsonify(error="unauthorized"), 401
+
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify(error="Please check your story and try again."), 400
+
+    title = clean_text(str(data.get("title") or ""), TITLE_MAX)
+    content = clean_text(str(data.get("content") or ""), CONTENT_MAX)
+    category = clean_category(str(data.get("category") or ""))
+    author = clean_text(str(data.get("author") or ""), AUTHOR_MAX) or "Anonymous"
+    if len(title) < 3 or len(content) < 100:
+        return jsonify(error="Please write a title and a longer story."), 400
+
+    tier = str(data.get("tier") or "").strip().lower()
+    if tier not in ("paid", "developer", "founder"):
+        tier = ""
+
+    # one author cannot flood the review queue (the key is a one-way stand-in sent by Mkuu)
+    author_key = _re.sub(r"[^a-f0-9]", "", str(data.get("author_key") or ""))[:32]
+    if not author_key:
+        return jsonify(error="Please check your story and try again."), 400
+    if not limiter.allow("apishare:" + author_key, 8, 3600):
+        return jsonify(error="You have shared a lot of stories."), 429
+
+    slug = make_slug(
+        title, lambda x: Story.query.filter_by(slug=x).first() is not None
+    )
+    story = Story(
+        title=title,
+        slug=slug,
+        category=category,
+        content=content,
+        author=author,
+        published=False,
+        read_count=0,
+        verified_tier=tier or None,
+        show_mark=bool(data.get("show_mark", True)) if tier else False,
+    )
+    db.session.add(story)
+    db.session.commit()
+    return jsonify(ok=True, status="pending", slug=slug), 201
+
+
 @app.route("/health")
 def health():
     return {"ok": True}
@@ -1260,6 +1326,10 @@ with app.app_context():
     db.create_all()
 
     for statement in (
+        "ALTER TABLE stories ADD COLUMN IF NOT EXISTS verified_tier VARCHAR(16)",
+        "ALTER TABLE stories ADD COLUMN IF NOT EXISTS show_mark BOOLEAN DEFAULT TRUE",
+        "ALTER TABLE stories ADD COLUMN verified_tier VARCHAR(16)",  # SQLite; an error on Postgres is ignored
+        "ALTER TABLE stories ADD COLUMN show_mark BOOLEAN DEFAULT 1",
         "CREATE INDEX IF NOT EXISTS ix_stories_pub_created ON stories (published, created_at)",
         "CREATE INDEX IF NOT EXISTS ix_story_reads_story ON story_reads (story_id, ip_address)",
         "CREATE INDEX IF NOT EXISTS ix_reactions_story ON reactions (story_id, ip_address)",

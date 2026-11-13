@@ -12,6 +12,7 @@
         rel="stylesheet"
         href="{{ url_for('static', filename='css/admin.css') }}"
     >
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/verified.css') }}">
 </head>
 
 <body>
@@ -69,7 +70,7 @@
 
                                         <td data-label="Story">
                                             <div class="cell-title">{{ story.title }}</div>
-                                            <div class="cell-sub">{{ story.author }}</div>
+                                            <div class="cell-sub">{{ story.author }}{% include 'admin/_tier.html' %}</div>
                                         </td>
 
                                         <td data-label="Category">{{ story.category }}</td>
