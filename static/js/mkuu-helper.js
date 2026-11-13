@@ -1,18 +1,37 @@
-/*! Mkuu helper bubble for Neckrone8x Stories.
+/*! Mkuu helper bubble for Neckrone8x sites (Stories, 8X Weather).
  *  A small chat that talks to the Mkuu AI server. No libraries. Everything that
- *  comes from the AI or from a story is inserted as TEXT, never as HTML. */
+ *  comes from the AI or from a story is inserted as TEXT, never as HTML.
+ *
+ *  Configure with data- attributes on the <script> tag (all optional):
+ *    data-api            Mkuu server address
+ *    data-site           "stories" (default) or "weather"
+ *    data-story          story slug (stories site)
+ *    data-subtitle       text under the "Mkuu" title
+ *    data-placeholder    input placeholder
+ *    data-welcome        first message
+ *    data-chips          suggestion buttons, separated by |
+ *    data-link-origins   other sites story cards may link to, separated by space
+ *  A page can define window.MkuuHelperContext = function () { return "text"; }
+ *  to send live page context (e.g. the current weather) with every message,
+ *  and window.MkuuHelperNotice = function () { return {id, text} or null; }
+ *  for a one-time "heads up" (e.g. an active alert): a dot appears on the
+ *  button, and the note shows when the bubble opens. The page fires
+ *  window "mkuu:context-changed" when either may have changed. */
 (function (root) {
   'use strict';
 
   var DEFAULT_API = 'https://mkuu.neckrone8x.co.ke';
   var MAX_CHARS = 500;
+  var MAX_CONTEXT = 2000;
   var SID_KEY = 'mkuu_helper_sid';
+  var NOTICE_KEY = 'mkuu_helper_notices';
 
   var ICONS = {
     spark: '<svg viewBox="0 0 24 24" width="26" height="26" aria-hidden="true" focusable="false"><path fill="currentColor" d="M12 2l1.9 5.6L19.5 9.5l-5.6 1.9L12 17l-1.9-5.6L4.5 9.5l5.6-1.9L12 2zm7 11l.9 2.6 2.6.9-2.6.9L19 20l-.9-2.6-2.6-.9 2.6-.9L19 13zM5 14l.7 1.9 1.9.7-1.9.7L5 19.2l-.7-1.9-1.9-.7 1.9-.7L5 14z"/></svg>',
     close: '<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" focusable="false"><path fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" d="M6 6l12 12M18 6L6 18"/></svg>',
     send: '<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" focusable="false"><path fill="currentColor" d="M3.4 20.4l17.5-7.5a1 1 0 000-1.8L3.4 3.6a1 1 0 00-1.4 1.2l2 6.2 9 1-9 1-2 6.2a1 1 0 001.4 1.2z"/></svg>',
     reset: '<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" focusable="false"><path fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" d="M20 11a8 8 0 10-2.3 5.7M20 4v7h-7"/></svg>',
+    alert: '<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" focusable="false"><path fill="currentColor" d="M12 2.5c.5 0 1 .27 1.27.75l9.5 16.5A1.47 1.47 0 0121.5 22h-19a1.47 1.47 0 01-1.27-2.25l9.5-16.5c.27-.48.77-.75 1.27-.75zm0 6.25a1.1 1.1 0 00-1.1 1.17l.35 5.03a.75.75 0 001.5 0l.35-5.03A1.1 1.1 0 0012 8.75zm0 8.25a1.25 1.25 0 100 2.5 1.25 1.25 0 000-2.5z"/></svg>',
     arrow: '<svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true" focusable="false"><path fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" d="M7 17L17 7M8 7h9v9"/></svg>'
   };
 
@@ -81,7 +100,23 @@
     var win = opts.window || root;
     var api = String(opts.api || DEFAULT_API).replace(/\/+$/, '');
     var story = opts.story || '';
+    var site = opts.site || 'stories';
     var origin = opts.origin || (win.location && win.location.origin) || '';
+    var linkOrigins = [origin].concat(opts.linkOrigins || []);
+    var getContext = opts.getContext || function () {
+      return typeof win.MkuuHelperContext === 'function' ? win.MkuuHelperContext() : '';
+    };
+    var getNotice = opts.getNotice || function () {
+      return typeof win.MkuuHelperNotice === 'function' ? win.MkuuHelperNotice() : null;
+    };
+    var subtitle = opts.subtitle || (story ? 'Helping with this story' : 'Stories helper');
+    var placeholder = opts.placeholder || (story ? 'Ask about this story…' : 'Ask Mkuu…');
+    var welcomeText = opts.welcome || (story
+      ? 'Niaje! I am Mkuu. Ask me about this story: a short summary, what a word means, or something similar to read.'
+      : 'Niaje! I am Mkuu. Ask me to recommend a story, or ask how the site works.');
+    var chipList = (opts.chips && opts.chips.length) ? opts.chips : (story
+      ? ['Summarize this story', 'What do the slang words mean?', 'Recommend a story like this']
+      : ['Recommend a story about love', 'Any confessions?', 'How do I share my story?']);
     var fetchFn = opts.fetch || win.fetch.bind(win);
     var store = opts.storage;
     if (!store) { try { store = win.sessionStorage; } catch (e) { store = null; } }
@@ -90,6 +125,9 @@
     var sid = '';
     try { sid = (store && store.getItem(SID_KEY)) || ''; } catch (e) { sid = ''; }
     var busy = false, lastSend = 0;
+    var shownNotices = [], pendingNotice = null;
+    try { shownNotices = JSON.parse((store && store.getItem(NOTICE_KEY)) || '[]') || []; } catch (e) { shownNotices = []; }
+    if (!Array.isArray(shownNotices)) shownNotices = [];
 
     function el(tag, cls, text) {
       var n = doc.createElement(tag);
@@ -102,6 +140,9 @@
     // --- build the bubble ---
     var rootEl = el('div', 'mkh-root');
     var fab = icon('spark', el('button', 'mkh-fab'));
+    var dot = el('span', 'mkh-dot');
+    dot.hidden = true;
+    fab.appendChild(dot);
     fab.type = 'button';
     fab.setAttribute('aria-label', 'Ask Mkuu');
     fab.setAttribute('aria-expanded', 'false');
@@ -110,14 +151,14 @@
     var panel = el('section', 'mkh-panel');
     panel.id = 'mkh-panel';
     panel.setAttribute('role', 'dialog');
-    panel.setAttribute('aria-label', 'Mkuu, the stories helper');
+    panel.setAttribute('aria-label', 'Mkuu, ' + subtitle);
     panel.hidden = true;
 
     var head = el('header', 'mkh-head');
     var avatar = icon('spark', el('span', 'mkh-avatar'));
     var title = el('div', 'mkh-title');
     title.appendChild(el('strong', '', 'Mkuu'));
-    title.appendChild(el('small', '', story ? 'Helping with this story' : 'Stories helper'));
+    title.appendChild(el('small', '', subtitle));
     var resetBtn = icon('reset', el('button', 'mkh-iconbtn'));
     resetBtn.type = 'button'; resetBtn.setAttribute('aria-label', 'Start a new chat');
     var closeBtn = icon('close', el('button', 'mkh-iconbtn'));
@@ -134,7 +175,7 @@
     input.type = 'text';
     input.maxLength = MAX_CHARS;
     input.autocomplete = 'off';
-    input.placeholder = story ? 'Ask about this story…' : 'Ask Mkuu…';
+    input.placeholder = placeholder;
     input.setAttribute('aria-label', 'Your message to Mkuu');
     var sendBtn = icon('send', el('button', 'mkh-send'));
     sendBtn.type = 'submit'; sendBtn.setAttribute('aria-label', 'Send');
@@ -166,7 +207,8 @@
     function addCards(container, stories) {
       var shown = 0;
       (stories || []).forEach(function (s) {
-        if (shown >= 3 || !s || !s.title || !sameSite(s.url, origin)) return;
+        if (shown >= 3 || !s || !s.title) return;
+        if (!linkOrigins.some(function (o) { return o && sameSite(s.url, o); })) return;
         shown++;
         var a = el('a', 'mkh-card');
         a.href = String(s.url);
@@ -184,17 +226,12 @@
 
     function welcome() {
       log.textContent = '';
-      addMsg('bot', story
-        ? 'Niaje! I am Mkuu. Ask me about this story: a short summary, what a word means, or something similar to read.'
-        : 'Niaje! I am Mkuu. Ask me to recommend a story, or ask how the site works.');
+      addMsg('bot', welcomeText);
     }
 
     function setChips() {
       chips.textContent = '';
-      var list = story
-        ? ['Summarize this story', 'What do the slang words mean?', 'Recommend a story like this']
-        : ['Recommend a story about love', 'Any confessions?', 'How do I share my story?'];
-      list.forEach(function (label) {
+      chipList.forEach(function (label) {
         var b = el('button', 'mkh-chipbtn', label);
         b.type = 'button';
         b.addEventListener('click', function () { send(label); });
@@ -207,6 +244,43 @@
       sendBtn.disabled = v;
       input.disabled = v;
       rootEl.setAttribute('data-busy', v ? 'true' : 'false');
+    }
+
+    // --- one-time notice (e.g. an active alert) ---
+    function noticeSeen(id) { return shownNotices.indexOf(id) >= 0; }
+
+    function showNotice(n) {
+      var m = el('div', 'mkh-msg mkh-bot mkh-notice');
+      m.setAttribute('role', 'status');
+      m.appendChild(icon('alert', el('span', 'mkh-noticeicon')));
+      var body = el('span', 'mkh-noticetext');
+      renderText(doc, body, n.text);
+      m.appendChild(body);
+      log.appendChild(m);
+      scrollDown();
+      shownNotices.push(n.id);
+      shownNotices = shownNotices.slice(-20);
+      try { if (store) store.setItem(NOTICE_KEY, JSON.stringify(shownNotices)); } catch (e) { /* private mode */ }
+      pendingNotice = null;
+      setDot(false);
+    }
+
+    function setDot(on) {
+      dot.hidden = !on;
+      fab.setAttribute('aria-label', on ? 'Ask Mkuu (1 new alert)' : 'Ask Mkuu');
+    }
+
+    function checkNotice() {
+      var n = null;
+      try { n = getNotice(); } catch (e) { n = null; }
+      if (!n || !n.id || !n.text || noticeSeen(String(n.id))) {
+        pendingNotice = null;
+        setDot(false);
+        return;
+      }
+      pendingNotice = { id: String(n.id), text: String(n.text).slice(0, 600) };
+      if (!panel.hidden) showNotice(pendingNotice);
+      else setDot(true);
     }
 
     // --- sending ---
@@ -271,8 +345,11 @@
         if (!started) renderText(doc, bubble, 'Mkuu is waking up, one moment…');
       }, 6000);
 
-      var body = { message: text, mode: 'auto', site: 'stories' };
+      var body = { message: text, mode: 'auto', site: site };
       if (story) body.story = story;
+      var context = '';
+      try { context = String(getContext() || '').trim(); } catch (e) { context = ''; }
+      if (context) body.context = context.slice(0, MAX_CONTEXT);
       if (sid) body.session_id = sid;
 
       return fetchFn(api + '/chat/stream', {
@@ -301,7 +378,11 @@
       panel.hidden = !open;
       rootEl.setAttribute('data-open', open ? 'true' : 'false');
       fab.setAttribute('aria-expanded', open ? 'true' : 'false');
-      if (open) { scrollDown(); try { input.focus(); } catch (e) { /* ignore */ } }
+      if (open) {
+        if (pendingNotice) showNotice(pendingNotice);
+        scrollDown();
+        try { input.focus(); } catch (e) { /* ignore */ }
+      }
     }
 
     fab.addEventListener('click', function () { setOpen(panel.hidden); });
@@ -317,9 +398,11 @@
 
     welcome();
     setChips();
+    checkNotice();
+    if (win.addEventListener) win.addEventListener('mkuu:context-changed', checkNotice);
 
     return { send: send, open: function () { setOpen(true); }, close: function () { setOpen(false); }, panel: panel, log: log, input: input, form: form, fab: fab, chips: chips,
-             sessionId: function () { return sid; } };
+             sessionId: function () { return sid; }, checkNotice: checkNotice, dot: dot };
   }
 
   var api = { init: init, sameSite: sameSite, parseSSE: parseSSE, renderText: renderText, shorten: shorten, friendly: friendly };
@@ -328,6 +411,20 @@
   if (root.document && !root.__MKUU_HELPER_TEST && !root.__mkuuHelperLoaded) {
     root.__mkuuHelperLoaded = true;
     var script = root.document.currentScript || root.document.querySelector('script[data-api]');
-    init({ api: script && script.getAttribute('data-api'), story: script && script.getAttribute('data-story') });
+    var attr = function (name) { return (script && script.getAttribute('data-' + name)) || ''; };
+    var start = function () {
+      init({
+        api: attr('api'),
+        story: attr('story'),
+        site: attr('site'),
+        subtitle: attr('subtitle'),
+        placeholder: attr('placeholder'),
+        welcome: attr('welcome'),
+        chips: attr('chips') ? attr('chips').split('|').map(function (c) { return c.trim(); }).filter(Boolean) : null,
+        linkOrigins: attr('link-origins') ? attr('link-origins').split(/\s+/).filter(Boolean) : null
+      });
+    };
+    if (root.document.body) start();
+    else root.document.addEventListener('DOMContentLoaded', start);
   }
 })(typeof window !== 'undefined' ? window : globalThis);
