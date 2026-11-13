@@ -1150,6 +1150,31 @@ def api_story(slug):
     return jsonify(item)
 
 
+@app.route("/api/stories/<slug>/text")
+def api_story_text(slug):
+    """The whole text of one story, for Mkuu's in-app reader. Only Mkuu's server
+    (which has FEED_TOKEN) may ask. Never 18+, never unpublished."""
+    import hmac
+
+    token = os.getenv("FEED_TOKEN", "")
+    given = request.headers.get("X-Feed-Token", "") or ""
+    if not token or not hmac.compare_digest(given.encode(), token.encode()):
+        return jsonify(error="unauthorized"), 401
+
+    if not rate_ok("feed", 60, 60):
+        return jsonify(error="too many requests"), 429
+
+    story = feed_query().filter(Story.slug == slug).first()
+    if story is None:
+        return jsonify(error="not found"), 404
+
+    item = feed_item(story, 300)
+    item["content"] = story.content[:200000]
+    response = jsonify(item)
+    response.headers["Cache-Control"] = "no-store"
+    return response
+
+
 @app.route("/health")
 def health():
     return {"ok": True}
