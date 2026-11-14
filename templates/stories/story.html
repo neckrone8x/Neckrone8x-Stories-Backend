@@ -86,7 +86,7 @@
                 <span class="meta-separator">•</span>
                 <span>{{ story.created_at.strftime('%B %d, %Y') }}</span>
                 <span class="meta-separator">•</span>
-                <span>👁 {{ story.read_count }} reads</span>
+                <span>👁 {{ story.read_count }} {{ 'read' if story.read_count == 1 else 'reads' }}</span>
             </div>
 
             {% if story.cover_image %}
