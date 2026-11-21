@@ -33,7 +33,7 @@
             <!-- MAIN WEBSITE -->
 
             <a
-                href="{{ url_for('home') }}"
+                href="{{ main_site_url }}"
                 class="logo"
             >
                 NECKRONE8X
@@ -170,7 +170,7 @@
                 </h2>
 
                 <span>
-                    {{ pagination.total }} stories
+                    {{ pagination.total }} {{ 'story' if pagination.total == 1 else 'stories' }}
                 </span>
 
             </div>
@@ -405,7 +405,7 @@
 
     <footer>
 
-        © {{ now.year if now is defined else 2026 }}
+        © {{ current_year }}
         Neckrone8x. All rights reserved.
 
     </footer>

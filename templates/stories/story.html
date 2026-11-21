@@ -20,11 +20,9 @@
     <meta property="og:description" content="{{ story.content[:160] }}">
     <meta property="og:url" content="{{ request.url }}">
 
-    {% if story.cover_image %}
-        <meta
-            property="og:image"
-            content="{{ request.url_root.rstrip('/') }}{{ story.cover_image }}"
-        >
+    {% set share_image = absolute_image_url(story.cover_image) %}
+    {% if share_image %}
+        <meta property="og:image" content="{{ share_image }}">
     {% endif %}
 
     <!-- TWITTER -->
@@ -32,11 +30,8 @@
     <meta name="twitter:title" content="{{ story.title }}">
     <meta name="twitter:description" content="{{ story.content[:160] }}">
 
-    {% if story.cover_image %}
-        <meta
-            name="twitter:image"
-            content="{{ request.url_root.rstrip('/') }}{{ story.cover_image }}"
-        >
+    {% if share_image %}
+        <meta name="twitter:image" content="{{ share_image }}">
     {% endif %}
 
     <title>{{ story.title }} | Neckrone8x Stories</title>

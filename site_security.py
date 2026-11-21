@@ -26,7 +26,8 @@ from datetime import timedelta
 from functools import wraps
 from urllib.parse import urlparse
 
-from flask import abort, current_app, g, redirect, request, session, url_for
+from flask import (abort, current_app, g, jsonify, redirect, request, session,
+                   url_for)
 from werkzeug.middleware.proxy_fix import ProxyFix
 from werkzeug.security import check_password_hash
 
@@ -83,14 +84,30 @@ def _same_site_posts_only():
     admin action such as 'delete story' for a logged-in admin."""
     if request.method in _SAFE:
         return None
+    view = current_app.view_functions.get(request.endpoint)
+    if getattr(view, "token_post", False):
+        # Server-to-server route (Mkuu): no Origin/Referer is sent, so the
+        # FEED_TOKEN is required instead. Without it the post is refused.
+        if feed_authorized_strict(request.headers):
+            return None
+        return jsonify(error="unauthorized"), 401
     source = request.headers.get("Origin") or request.headers.get("Referer") or ""
     if urlparse(source).netloc.lower() != request.host.lower():
         abort(403)
     return None
 
 
+def token_post(view):
+    """Marks a POST route that Mkuu's server calls: it skips the same-site
+    Origin check and needs a valid X-Feed-Token header instead."""
+    view.token_post = True
+    return view
+
+
 def _add_headers(resp):
     h = resp.headers
+    if resp.status_code == 429:
+        h.setdefault("Retry-After", str(getattr(g, "retry_after", None) or 60))
     h.setdefault("X-Content-Type-Options", "nosniff")
     h.setdefault("X-Frame-Options", "SAMEORIGIN")
     h.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
@@ -106,25 +123,45 @@ def _add_headers(resp):
 
 # ───────────────────────── who is the visitor ─────────────────────────
 
-def _valid_ip(text: str):
+_CARRIER_NAT = ipaddress.ip_network("100.64.0.0/10")
+
+
+def _parse_ip(text):
     try:
-        return str(ipaddress.ip_address((text or "").strip()))
+        addr = ipaddress.ip_address((text or "").strip())
     except ValueError:
         return None
+    return getattr(addr, "ipv4_mapped", None) or addr
+
+
+def _valid_ip(text: str):
+    addr = _parse_ip(text)
+    return str(addr) if addr else None
+
+
+def _public(addr) -> bool:
+    return bool(addr) and not (
+        (addr.version == 4 and addr in _CARRIER_NAT)
+        or addr.is_private or addr.is_loopback or addr.is_link_local
+        or addr.is_multicast or addr.is_reserved or addr.is_unspecified)
 
 
 def client_ip() -> str:
-    """Cloudflare sets CF-Connecting-IP. Otherwise the last X-Forwarded-For
-    entry (added by the host in front of us) is used; earlier entries can be
-    written by the visitor."""
-    cf = _valid_ip(request.headers.get("CF-Connecting-IP", ""))
-    if cf:
-        return cf
-    for part in reversed([p for p in request.headers.get(
-            "X-Forwarded-For", "").split(",") if p.strip()]):
-        ip = _valid_ip(part)
-        if ip:
-            return ip
+    """The visitor's real address (same rules as the Mkuu / weather server):
+    1. CF-Connecting-IP, only if it is a public address (set by Cloudflare).
+    2. X-Forwarded-For walked from the RIGHT, skipping private, carrier-NAT,
+       loopback and link-local hops (the proxies in front of us). The first
+       public one wins; entries further left can be typed by the visitor.
+    3. The connection's own address.
+    Before, the last X-Forwarded-For entry was used even when it was a private
+    proxy hop, so every visitor could land in one shared rate-limit bucket."""
+    cf = _parse_ip(request.headers.get("CF-Connecting-IP", ""))
+    if _public(cf):
+        return str(cf)
+    for part in reversed(request.headers.get("X-Forwarded-For", "").split(",")):
+        addr = _parse_ip(part)
+        if _public(addr):
+            return str(addr)
     return _valid_ip(request.remote_addr or "") or "unknown"
 
 
@@ -180,6 +217,13 @@ class RateLimiter:
             self._purge(window)
         return True
 
+    def retry_after(self, key: str, window: float) -> int:
+        """Seconds until the oldest use leaves the window (at least 1)."""
+        q = self._hits.get(key)
+        if not q:
+            return 1
+        return max(1, int(q[0] + window - self._now()) + 1)
+
     def add(self, key: str) -> None:
         self._hits.setdefault(key, deque()).append(self._now())
 
@@ -192,14 +236,42 @@ limiter = RateLimiter()
 _failed_logins = RateLimiter()
 
 
+def limit_ok(key: str, limit: int, window: float, lim=None) -> bool:
+    """Records one use of `key`. When refused, remembers how long to wait so
+    the 429 response carries a matching Retry-After header."""
+    lim = lim or limiter
+    if lim.allow(key, limit, window):
+        return True
+    g.retry_after = lim.retry_after(key, window)
+    return False
+
+
 def rate_ok(name: str, limit: int, window: float) -> bool:
-    return limiter.allow(f"{name}:{ip_fingerprint()}", limit, window)
+    return limit_ok(f"{name}:{ip_fingerprint()}", limit, window)
+
+
+# Story feed: callers without a valid token are limited per IP. Mkuu's server
+# (valid FEED_TOKEN) makes every call for all of its users from one address,
+# so it gets its own, much higher (but still capped) bucket.
+FEED_WINDOW = 60
+FEED_IP_LIMIT = 60          # per visitor IP per minute
+FEED_TOKEN_LIMIT = 1200     # for the token holder, per minute
+
+
+def feed_rate_ok(headers) -> bool:
+    if feed_authorized_strict(headers):
+        return limit_ok("feed-token", FEED_TOKEN_LIMIT, FEED_WINDOW)
+    return rate_ok("feed", FEED_IP_LIMIT, FEED_WINDOW)
 
 
 # ───────────────────────── admin login ─────────────────────────
 
 def login_blocked() -> bool:
-    return _failed_logins.count(f"login:{ip_fingerprint()}", 900) >= 5
+    key = f"login:{ip_fingerprint()}"
+    if _failed_logins.count(key, 900) >= 5:
+        g.retry_after = _failed_logins.retry_after(key, 900)
+        return True
+    return False
 
 
 def login_failed() -> None:

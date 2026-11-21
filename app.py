@@ -26,10 +26,10 @@ from site_security import (
     COMMENT_MAX, COMMENT_NAME_MAX, AUTHOR_MAX, CATEGORIES, CONTENT_MAX,
     TITLE_MAX, admin_required, canonical_category, check_admin_credentials,
     clean_category, clean_text, configure_security, feed_authorized,
-    feed_authorized_strict,
+    feed_authorized_strict, feed_rate_ok, limit_ok,
     like_escape, login_blocked, login_failed, make_excerpt, make_slug,
     rate_ok, reading_minutes, safe_https_url, start_admin_session,
-    visitor_key,
+    token_post, visitor_key,
 )
 
 
@@ -49,9 +49,29 @@ configure_security(app)
 # TEMPLATE GLOBALS
 # ============================================================
 
+MAIN_SITE_URL = "https://neckrone8x.co.ke/"
+
+
+def absolute_image_url(value):
+    """A full https address for og:image / twitter:image. Cover images are
+    saved as full https links; an older site-relative path ("/static/x.jpg")
+    is made absolute. Anything else gives None (no image tag)."""
+    full = safe_https_url(value)
+    if full:
+        return full
+    v = (value or "").strip()
+    if v.startswith("/") and not v.startswith("//"):
+        return safe_https_url(request.url_root.rstrip("/") + v)
+    return None
+
+
 @app.context_processor
 def inject_template_globals():
-    return {"current_year": datetime.utcnow().year}
+    return {
+        "current_year": datetime.utcnow().year,
+        "absolute_image_url": absolute_image_url,
+        "main_site_url": MAIN_SITE_URL,
+    }
 
 
 # ============================================================
@@ -83,6 +103,14 @@ else:
     )
 
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+
+# After Render free sleeps, Postgres may have closed the old connections. Test
+# each one before use (and renew it after ~5 minutes) instead of failing the
+# first request with a 500.
+app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {
+    "pool_pre_ping": True,
+    "pool_recycle": 280,
+}
 
 db = SQLAlchemy(app)
 
@@ -1110,7 +1138,7 @@ def api_stories():
     if not feed_authorized(request.headers):
         return jsonify(error="unauthorized"), 401
 
-    if not rate_ok("feed", 60, 60):
+    if not feed_rate_ok(request.headers):
         return jsonify(error="too many requests"), 429
 
     limit = min(max(request.args.get("limit", 50, type=int), 1), 100)
@@ -1137,7 +1165,7 @@ def api_story(slug):
     if not feed_authorized(request.headers):
         return jsonify(error="unauthorized"), 401
 
-    if not rate_ok("feed", 60, 60):
+    if not feed_rate_ok(request.headers):
         return jsonify(error="too many requests"), 429
 
     story = feed_query().filter(Story.slug == slug).first()
@@ -1164,14 +1192,10 @@ def api_story(slug):
 def api_story_text(slug):
     """The whole text of one story, for Mkuu's in-app reader. Only Mkuu's server
     (which has FEED_TOKEN) may ask. Never 18+, never unpublished."""
-    import hmac
-
-    token = os.getenv("FEED_TOKEN", "")
-    given = request.headers.get("X-Feed-Token", "") or ""
-    if not token or not hmac.compare_digest(given.encode(), token.encode()):
+    if not feed_authorized_strict(request.headers):
         return jsonify(error="unauthorized"), 401
 
-    if not rate_ok("feed", 60, 60):
+    if not feed_rate_ok(request.headers):
         return jsonify(error="too many requests"), 429
 
     story = feed_query().filter(Story.slug == slug).first()
@@ -1186,18 +1210,16 @@ def api_story_text(slug):
 
 
 @app.route("/api/submissions", methods=["POST"])
+@token_post
 def api_submissions():
     """A story shared from the Mkuu app. Only Mkuu's server (which has FEED_TOKEN)
     may use this. It is ALWAYS saved as pending, never published. A verified
-    member's story carries their tier, so it is reviewed first."""
-    import hmac
+    member's story carries their tier, so it is reviewed first.
+    @token_post: no same-site Origin check (a server sends none); the token is
+    required instead, here and before the request reaches this function."""
     import re as _re
 
-    from site_security import limiter
-
-    token = os.getenv("FEED_TOKEN", "")
-    given = request.headers.get("X-Feed-Token", "") or ""
-    if not token or not hmac.compare_digest(given.encode(), token.encode()):
+    if not feed_authorized_strict(request.headers):
         return jsonify(error="unauthorized"), 401
 
     data = request.get_json(silent=True)
@@ -1219,7 +1241,7 @@ def api_submissions():
     author_key = _re.sub(r"[^a-f0-9]", "", str(data.get("author_key") or ""))[:32]
     if not author_key:
         return jsonify(error="Please check your story and try again."), 400
-    if not limiter.allow("apishare:" + author_key, 8, 3600):
+    if not limit_ok("apishare:" + author_key, 8, 3600):
         return jsonify(error="You have shared a lot of stories."), 429
 
     slug = make_slug(
