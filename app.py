@@ -71,6 +71,8 @@ def inject_template_globals():
         "current_year": datetime.utcnow().year,
         "absolute_image_url": absolute_image_url,
         "main_site_url": MAIN_SITE_URL,
+        "excerpt": make_excerpt,
+        "reading_minutes": reading_minutes,
     }
 
 
@@ -218,7 +220,8 @@ def home():
 def stories():
 
     search = request.args.get("search", "").strip()[:100]
-    category = request.args.get("category", "").strip()
+    # the exact category name ("life" -> "Life"); an unknown one is ignored
+    category = canonical_category(request.args.get("category", "")) or ""
     page = request.args.get("page", 1, type=int)
 
     if page < 1:
@@ -237,8 +240,8 @@ def stories():
             )
         )
 
-    if canonical_category(category):
-        query = query.filter(Story.category == canonical_category(category))
+    if category:
+        query = query.filter(Story.category == category)
 
     pagination = query.order_by(Story.created_at.desc()).paginate(
         page=page, per_page=6, error_out=False
@@ -246,10 +249,7 @@ def stories():
 
     stories = pagination.items
 
-    categories = [
-        "General", "Confession", "Experience", "News",
-        "Relationship", "Marriage", "Life", "Novels", "18+", "Other"
-    ]
+    categories = CATEGORIES
 
     return render_template(
         "stories/index.html",
@@ -469,46 +469,7 @@ def submit_story():
         db.session.add(story)
         db.session.commit()
 
-        return """
-        <!DOCTYPE html>
-        <html lang="en">
-        <head>
-            <meta charset="UTF-8">
-            <meta name="viewport" content="width=device-width, initial-scale=1.0">
-            <title>Story Submitted — Neckrone8x</title>
-            <style>
-                * { box-sizing: border-box; }
-                body {
-                    margin: 0; min-height: 100vh;
-                    display: flex; justify-content: center; align-items: center;
-                    background: #080c14; color: white;
-                    font-family: Arial, sans-serif;
-                    text-align: center; padding: 20px;
-                }
-                .box {
-                    max-width: 550px; padding: 40px;
-                    background: #0d1320;
-                    border: 1px solid #202938;
-                    border-radius: 12px;
-                }
-                h1 { margin-top: 0; }
-                p { color: #aab2c0; line-height: 1.6; }
-                a {
-                    display: inline-block; margin-top: 20px;
-                    color: #00d9ff; text-decoration: none;
-                }
-            </style>
-        </head>
-        <body>
-            <div class="box">
-                <h1>Story Submitted</h1>
-                <p>Thank you for sharing your story.</p>
-                <p>Your submission has been received and will be reviewed before publication.</p>
-                <a href="/stories">&#8592; Back to Stories</a>
-            </div>
-        </body>
-        </html>
-        """
+        return render_template("stories/submit_thanks.html")
 
     return render_template("stories/submit.html", error=None)
 

@@ -1,418 +1,158 @@
-﻿<!DOCTYPE html>
-<html lang="en">
+{% extends 'stories/base.html' %}
+{% from 'stories/_icons.html' import icon %}
 
-<head>
+{% block title %}{% if search %}Search: {{ search }} | {% elif category %}{{ category }} | {% endif %}Neckrone8x Stories{% endblock %}
 
-    <meta charset="UTF-8">
+{% block meta %}
+    <link rel="canonical" href="{{ url_for('stories', _external=True) }}">
+    <meta property="og:type" content="website">
+    <meta property="og:title" content="Neckrone8x Stories">
+    <meta property="og:description" content="Real stories, confessions and experiences shared by the Neckrone8x community.">
+{% endblock %}
 
-    <meta
-        name="viewport"
-        content="width=device-width, initial-scale=1.0"
-    >
+{%- macro story_meta(story) -%}
+<ul class="story-meta">
+    <li>{{ icon('clock', 16) }}<span>{{ reading_minutes(story.content) }} min read</span></li>
+    <li>{{ icon('eye', 16) }}<span>{{ story.read_count or 0 }} {{ 'read' if (story.read_count or 0) == 1 else 'reads' }}</span></li>
+    <li>{{ icon('calendar', 16) }}<time datetime="{{ story.created_at.strftime('%Y-%m-%d') }}">{{ story.created_at.strftime('%b %d, %Y') }}</time></li>
+</ul>
+{%- endmacro -%}
 
-    <title>Neckrone8x Stories</title>
+{%- macro category_tag(story) -%}
+{% if story.category == "18+" %}
+    <span class="tag tag-adult">{{ icon('adult', 14) }}18+</span>
+{% else %}
+    <span class="tag">{{ story.category }}</span>
+{% endif %}
+{%- endmacro -%}
 
-    <link
-        rel="stylesheet"
-        href="{{ url_for('static', filename='css/stories.css') }}"
-    >
+{%- macro story_preview(story, chars) -%}
+{% if story.category == "18+" %}Adult story. You will be asked to confirm your age before reading.{% else %}{{ excerpt(story.content, chars) }}{% endif %}
+{%- endmacro -%}
 
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/verified.css') }}">
-</head>
+{% block content %}
 
-<body>
+    <section class="hero" aria-labelledby="page-title">
+        <p class="eyebrow">Neckrone8x Stories</p>
+        <h1 id="page-title">Real people. Real stories.</h1>
+        <p class="hero-lead">Confessions, experiences, love and life, shared by the Neckrone8x community.</p>
+        <a href="{{ url_for('submit_story') }}" class="button">
+            {{ icon('pen', 18) }}<span>Share your story</span>
+        </a>
+    </section>
 
-    <!-- =====================================================
-         HEADER
-    ====================================================== -->
+    <section class="finder" aria-label="Find a story">
+        <form class="search" method="GET" action="{{ url_for('stories') }}" role="search">
+            <label for="search" class="visually-hidden">Search stories</label>
+            <span class="search-icon">{{ icon('search', 20) }}</span>
+            <input type="search" id="search" name="search" value="{{ search }}"
+                   placeholder="Search titles, authors, words…" maxlength="100" autocomplete="off">
+            {% if category %}<input type="hidden" name="category" value="{{ category }}">{% endif %}
+            <button type="submit" class="button button-small">Search</button>
+        </form>
 
-    <header class="stories-header">
+        <nav class="chips" aria-label="Categories">
+            <a href="{{ url_for('stories', search=search or None) }}" class="chip"{% if not category %} aria-current="page"{% endif %}>All</a>
+            {% for item in categories %}
+                <a href="{{ url_for('stories', category=item, search=search or None) }}" class="chip"{% if category|lower == item|lower %} aria-current="page"{% endif %}>{{ item }}</a>
+            {% endfor %}
+        </nav>
+    </section>
 
-        <div class="header-inner">
-
-            <!-- MAIN WEBSITE -->
-
-            <a
-                href="{{ main_site_url }}"
-                class="logo"
-            >
-                NECKRONE8X
-            </a>
-
-
-            <!-- STORIES -->
-
-            <a
-                href="{{ url_for('stories') }}"
-                class="back-link"
-            >
-                ← Stories
-            </a>
-
+    <section class="listing" aria-labelledby="listing-title">
+        <div class="listing-head">
+            <h2 id="listing-title">
+                {% if search %}Results for “{{ search }}”{% elif category %}{{ category }} stories{% else %}Latest stories{% endif %}
+            </h2>
+            <p class="listing-count">{{ pagination.total }} {{ 'story' if pagination.total == 1 else 'stories' }}</p>
         </div>
 
-    </header>
-
-
-    <!-- =====================================================
-         MAIN
-    ====================================================== -->
-
-    <main class="stories-container">
-
-
-        <!-- =================================================
-             PAGE HEADER
-        ================================================== -->
-
-        <section class="stories-intro">
-
-            <h1>
-                Neckrone8x Stories
-            </h1>
-
-            <p>
-                Real stories, confessions, experiences and news
-                shared with the Neckrone8x community.
-            </p>
-
-
-            <a
-                href="{{ url_for('submit_story') }}"
-                class="submit-story"
-            >
-                ✍️ Share Your Story
-            </a>
-
-        </section>
-
-
-        <!-- =================================================
-             SEARCH
-        ================================================== -->
-
-        <section class="story-search">
-
-            <form
-                method="GET"
-                action="{{ url_for('stories') }}"
-            >
-
-                <input
-                    type="text"
-                    name="search"
-                    value="{{ search }}"
-                    placeholder="Search stories..."
-                >
-
-                {% if category %}
-
-                    <input
-                        type="hidden"
-                        name="category"
-                        value="{{ category }}"
-                    >
-
-                {% endif %}
-
-
-                <button type="submit">
-                    🔍 Search
-                </button>
-
-            </form>
-
-        </section>
-
-
-        <!-- =================================================
-             CATEGORIES
-        ================================================== -->
-
-        <nav class="story-categories">
-
-            <!-- ALL -->
-
-            <a
-                href="{{ url_for('stories') }}"
-                class="{% if not category %}active{% endif %}"
-            >
-                All
-            </a>
-
-
-            <!-- CATEGORIES -->
-
-            {% for item in categories %}
-
-                <a
-                    href="{{ url_for('stories', category=item) }}"
-                    class="{% if category == item %}active{% endif %}"
-                >
-                    {{ item }}
-                </a>
-
-            {% endfor %}
-
-        </nav>
-
-
-        <!-- =================================================
-             LATEST STORIES
-        ================================================== -->
-
-        <section class="latest-stories">
-
-            <div class="section-heading">
-
-                <h2>
-                    Latest Stories
-                </h2>
-
-                <span>
-                    {{ pagination.total }} {{ 'story' if pagination.total == 1 else 'stories' }}
-                </span>
-
-            </div>
-
-
-            <!-- =================================================
-                 STORY LIST
-            ================================================== -->
-
-            {% if stories %}
-
-                <div class="stories-grid">
-
-                    {% for story in stories %}
-
-                        <article class="story-card">
-
-
-                            <!-- ---------------------------------
-                                 CATEGORY
-                            ---------------------------------- -->
-
-                            <div class="story-card-category">
-
-                                {% if story.category == "18+" %}
-
-                                    🔞 18+
-
-                                {% else %}
-
-                                    {{ story.category }}
-
-                                {% endif %}
-
-                            </div>
-
-
-                            <!-- ---------------------------------
-                                 TITLE
-                            ---------------------------------- -->
-
-                            <h2>
-
-                                <a
-                                    href="{{ url_for('view_story', slug=story.slug) }}"
-                                >
-                                    {{ story.title }}
-                                </a>
-
-                            </h2>
-
-
-                            <!-- ---------------------------------
-                                 PREVIEW
-                            ---------------------------------- -->
-
-                            <p class="story-preview">
-
-                                {% if story.category == "18+" %}Adult story. You will be asked to confirm your age before reading.{% else %}{{ story.content[:180] }}{% endif %}
-
-                                {% if story.category != "18+" and story.content|length > 180 %}
-                                    ...
-                                {% endif %}
-
-                            </p>
-
-
-                            <!-- ---------------------------------
-                                 META
-                            ---------------------------------- -->
-
-                            <div class="story-meta">
-
-                                <span>
-                                    {{ story.author }}{% include 'stories/_verified_mark.html' %}
-                                </span>
-
-                                <span>
-                                    👁 {{ story.read_count or 0 }}
-                                </span>
-
-                            </div>
-
-
-                            <!-- ---------------------------------
-                                 READ STORY
-                            ---------------------------------- -->
-
-                            <a
-                                href="{{ url_for('view_story', slug=story.slug) }}"
-                                class="read-story"
-                            >
-                                READ STORY →
-                            </a>
-
-
-                        </article>
-
-                    {% endfor %}
-
-                </div>
-
-
-            {% else %}
-
-                <div class="no-stories">
-
-                    <h2>
-                        No stories found
-                    </h2>
-
-                    <p>
-                        Try a different search or category.
-                    </p>
-
-                    <a
-                        href="{{ url_for('stories') }}"
-                    >
-                        View All Stories
-                    </a>
-
-                </div>
-
+        {% if stories %}
+            {% set show_featured = pagination.page == 1 and not search and not category %}
+            {% set rest = stories[1:] if show_featured else stories %}
+
+            {% if show_featured %}
+                {% set story = stories[0] %}
+                <article class="card card-featured">
+                    <div class="card-body">
+                        <div class="card-top">
+                            <span class="featured-label">Featured</span>
+                            {{ category_tag(story) }}
+                        </div>
+                        <h3 class="card-title">
+                            <a href="{{ url_for('view_story', slug=story.slug) }}" class="card-link">{{ story.title }}</a>
+                        </h3>
+                        <p class="card-excerpt">{{ story_preview(story, 260) }}</p>
+                        <p class="card-author">By {{ story.author }}{% include 'stories/_verified_mark.html' %}</p>
+                        {{ story_meta(story) }}
+                        <span class="card-cta" aria-hidden="true">Read story {{ icon('arrow-right', 16) }}</span>
+                    </div>
+                </article>
             {% endif %}
 
-        </section>
+            {% if rest %}
+                <div class="card-grid">
+                    {% for story in rest %}
+                        <article class="card">
+                            <div class="card-top">{{ category_tag(story) }}</div>
+                            <h3 class="card-title">
+                                <a href="{{ url_for('view_story', slug=story.slug) }}" class="card-link">{{ story.title }}</a>
+                            </h3>
+                            <p class="card-excerpt">{{ story_preview(story, 150) }}</p>
+                            <p class="card-author">By {{ story.author }}{% include 'stories/_verified_mark.html' %}</p>
+                            {{ story_meta(story) }}
+                        </article>
+                    {% endfor %}
+                </div>
+            {% endif %}
 
-
-        <!-- =================================================
-             PAGINATION
-        ================================================== -->
-
-        {% if pagination.pages > 1 %}
-
-            <nav
-                class="pagination"
-                aria-label="Stories pagination"
-            >
-
-
-                <!-- PREVIOUS -->
-
-                {% if pagination.has_prev %}
-
-                    <a
-                        href="{{ url_for(
-                            'stories',
-                            page=pagination.prev_num,
-                            search=search,
-                            category=category
-                        ) }}"
-                    >
-                        ← Previous
-                    </a>
-
-                {% endif %}
-
-
-                <!-- PAGE NUMBERS -->
-
-                {% for page_number in pagination.iter_pages(
-                    left_edge=1,
-                    left_current=1,
-                    right_current=1,
-                    right_edge=1
-                ) %}
-
-
-                    {% if page_number %}
-
-                        {% if page_number == pagination.page %}
-
-                            <span class="current-page">
-                                {{ page_number }}
-                            </span>
-
-                        {% else %}
-
-                            <a
-                                href="{{ url_for(
-                                    'stories',
-                                    page=page_number,
-                                    search=search,
-                                    category=category
-                                ) }}"
-                            >
-                                {{ page_number }}
-                            </a>
-
-                        {% endif %}
-
-
-                    {% else %}
-
-                        <span class="pagination-dots">
-                            …
-                        </span>
-
-                    {% endif %}
-
-                {% endfor %}
-
-
-                <!-- NEXT -->
-
-                {% if pagination.has_next %}
-
-                    <a
-                        href="{{ url_for(
-                            'stories',
-                            page=pagination.next_num,
-                            search=search,
-                            category=category
-                        ) }}"
-                    >
-                        Next →
-                    </a>
-
-                {% endif %}
-
-            </nav>
-
+        {% elif search or category %}
+            <div class="empty">
+                <span class="empty-icon">{{ icon('search', 28) }}</span>
+                <h3>No stories found</h3>
+                <p>
+                    Nothing matches
+                    {% if search %}“{{ search }}”{% endif %}{% if search and category %} in {% endif %}{% if category %}{{ category }}{% endif %}.
+                    Try another word or category.
+                </p>
+                <a href="{{ url_for('stories') }}" class="button button-ghost">See all stories</a>
+            </div>
+        {% else %}
+            <div class="empty">
+                <span class="empty-icon">{{ icon('book', 28) }}</span>
+                <h3>No stories yet</h3>
+                <p>The first story is waiting to be told. It could be yours.</p>
+                <a href="{{ url_for('submit_story') }}" class="button">{{ icon('pen', 18) }}<span>Share your story</span></a>
+            </div>
         {% endif %}
+    </section>
 
+    {% if pagination.pages > 1 %}
+        <nav class="pagination" aria-label="Pages">
+            {% if pagination.has_prev %}
+                <a href="{{ url_for('stories', page=pagination.prev_num, search=search or None, category=category or None) }}" class="page-link" rel="prev">
+                    {{ icon('arrow-left', 16) }}<span>Previous</span>
+                </a>
+            {% endif %}
 
-    </main>
+            {% for page_number in pagination.iter_pages(left_edge=1, left_current=1, right_current=1, right_edge=1) %}
+                {% if page_number %}
+                    {% if page_number == pagination.page %}
+                        <span class="page-link" aria-current="page">{{ page_number }}</span>
+                    {% else %}
+                        <a href="{{ url_for('stories', page=page_number, search=search or None, category=category or None) }}" class="page-link" aria-label="Page {{ page_number }}">{{ page_number }}</a>
+                    {% endif %}
+                {% else %}
+                    <span class="page-gap" aria-hidden="true">…</span>
+                {% endif %}
+            {% endfor %}
 
+            {% if pagination.has_next %}
+                <a href="{{ url_for('stories', page=pagination.next_num, search=search or None, category=category or None) }}" class="page-link" rel="next">
+                    <span>Next</span>{{ icon('arrow-right', 16) }}
+                </a>
+            {% endif %}
+        </nav>
+    {% endif %}
 
-    <!-- =====================================================
-         FOOTER
-    ====================================================== -->
-
-    <footer>
-
-        © {{ current_year }}
-        Neckrone8x. All rights reserved.
-
-    </footer>
-
-
-    {% include 'stories/_mkuu_helper.html' %}
-
-</body>
-
-</html>
+{% endblock %}
