@@ -76,16 +76,9 @@
                     <div class="form-group">
                         <label for="category">Category</label>
                         <select id="category" name="category">
-                            <option value="General" {% if selected_category == 'General' %}selected{% endif %}>General</option>
-                            <option value="Confession" {% if selected_category == 'Confession' %}selected{% endif %}>Confession</option>
-                            <option value="Experience" {% if selected_category == 'Experience' %}selected{% endif %}>Experience</option>
-                            <option value="News" {% if selected_category == 'News' %}selected{% endif %}>News</option>
-                            <option value="Relationship" {% if selected_category == 'Relationship' %}selected{% endif %}>Relationship</option>
-                            <option value="Marriage" {% if selected_category == 'Marriage' %}selected{% endif %}>Marriage</option>
-                            <option value="Life" {% if selected_category == 'Life' %}selected{% endif %}>Life</option>
-                            <option value="Novels" {% if selected_category == 'Novels' %}selected{% endif %}>Novels</option>
-                            <option value="18+" {% if selected_category == '18+' %}selected{% endif %}>18+</option>
-                            <option value="Other" {% if selected_category == 'Other' %}selected{% endif %}>Other</option>
+                            {% for item in categories %}
+                                <option value="{{ item }}"{% if selected_category == item %} selected{% endif %}>{{ item }}</option>
+                            {% endfor %}
                         </select>
                     </div>
 

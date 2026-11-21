@@ -33,6 +33,9 @@ from site_security import (
     rate_ok, reading_minutes, safe_https_url, start_admin_session,
     token_post, visitor_key,
 )
+from categories import (
+    ADULT_CATEGORY, CATEGORY_LIST, LAST_CATEGORY, category_slug, find_category,
+)
 
 
 # ============================================================
@@ -103,6 +106,9 @@ def inject_template_globals():
         "reading_minutes": reading_minutes,
         "reaction_types": REACTION_TYPES,
         "reaction_labels": REACTION_LABELS,
+        # the one category list (categories.py), for every form and link
+        "categories": CATEGORIES,
+        "category_slug": category_slug,
     }
 
 
@@ -277,8 +283,13 @@ def home():
 def stories():
 
     search = request.args.get("search", "").strip()[:100]
-    # the exact category name ("life" -> "Life"); an unknown one is ignored
-    category = canonical_category(request.args.get("category", "")) or ""
+    # ?category= accepts the name or the slug in any case ("life", "Life",
+    # "mystery-horror", "Mystery & Horror"). An unknown one is not an error:
+    # the page says nothing was found.
+    category_arg = request.args.get("category", "").strip()[:100]
+    found = find_category(category_arg) if category_arg else None
+    category = found.name if found else ""
+    unknown_category = category_arg if category_arg and not found else ""
     page = request.args.get("page", 1, type=int)
 
     if page < 1:
@@ -298,7 +309,9 @@ def stories():
         )
 
     if category:
-        query = query.filter(Story.category == category)
+        query = query.filter(db.func.lower(Story.category) == category.lower())
+    elif unknown_category:
+        query = query.filter(db.false())
 
     sort = request.args.get("sort", "newest")
     if sort not in SORTS:
@@ -310,11 +323,11 @@ def stories():
 
     stories = pagination.items
 
-    categories = CATEGORIES
+    chips, more_chips = category_chips(category)
 
     # The Trending row: page 1 of the plain list only.
     trending = []
-    if pagination.page == 1 and not search and not category:
+    if pagination.page == 1 and not search and not category and not unknown_category:
         trending = trending_stories()
 
     return render_template(
@@ -322,7 +335,9 @@ def stories():
         stories=stories,
         search=search,
         category=category,
-        categories=categories,
+        unknown_category=unknown_category,
+        chips=chips,
+        more_chips=more_chips,
         pagination=pagination,
         sort=sort,
         sorts=SORTS,
@@ -332,8 +347,46 @@ def stories():
 
 
 # ============================================================
-# LIST HELPERS: sorting, counts for a page of cards, trending
+# LIST HELPERS: category chips, sorting, counts for a page of cards, trending
 # ============================================================
+
+CHIPS_SHOWN = 8
+
+
+def category_story_counts():
+    """Published stories per category (one grouped query), by display name.
+    Stored names are matched to the list without caring about case."""
+    rows = db.session.query(db.func.lower(Story.category), db.func.count(Story.id)).filter(
+        Story.published == True).group_by(db.func.lower(Story.category)).all()
+    by_lower = dict(rows)
+    return {c.name: by_lower.get(c.name.lower(), 0) for c in CATEGORY_LIST}
+
+
+def category_chips(selected=""):
+    """The chips under the search box, and the rest for the More panel.
+
+    Only categories with at least one published story. Most stories first
+    (ties keep the list order), Other always last; the first 8 are chips, the
+    rest go in More. The selected category is always a chip, even if it has
+    no stories or would otherwise be in More.
+    Each item: {"name", "slug", "count"}."""
+    counts = category_story_counts()
+    order = {c.name: i for i, c in enumerate(CATEGORY_LIST)}
+    ranked = sorted(
+        (c for c in CATEGORY_LIST if counts[c.name] > 0),
+        key=lambda c: (c.name == LAST_CATEGORY, -counts[c.name], order[c.name]),
+    )
+    items = [{"name": c.name, "slug": c.slug, "count": counts[c.name]} for c in ranked]
+    shown, more = items[:CHIPS_SHOWN], items[CHIPS_SHOWN:]
+    if selected and selected not in [x["name"] for x in shown]:
+        pick = next((x for x in more if x["name"] == selected), None)
+        if pick:
+            more.remove(pick)
+        else:
+            pick = {"name": selected, "slug": category_slug(selected), "count": counts.get(selected, 0)}
+        shown.append(pick)
+    return shown, more
+
 
 SORTS = {"newest": "Newest", "read": "Most read", "loved": "Most loved"}
 
@@ -407,7 +460,7 @@ def compute_trending():
     if not candidates:
         return []
     allowed = {sid for (sid,) in db.session.query(Story.id).filter(
-        Story.id.in_(candidates), Story.published == True, Story.category != "18+")}
+        Story.id.in_(candidates), Story.published == True, Story.category != ADULT_CATEGORY)}
 
     items = [{"id": sid, "reactions": reactions.get(sid, 0), "reads": reads.get(sid, 0)}
              for sid in allowed]
@@ -434,7 +487,7 @@ def trending_stories():
 
     found = {s.id: s for s in Story.query.filter(
         Story.id.in_([x["id"] for x in items]),
-        Story.published == True, Story.category != "18+")}
+        Story.published == True, Story.category != ADULT_CATEGORY)}
     rows = [(found[x["id"]], x) for x in items if x["id"] in found]
     return rows if len(rows) >= TRENDING_MIN else []
 
@@ -449,7 +502,7 @@ def view_story(slug):
     story = Story.query.filter_by(slug=slug, published=True).first_or_404()
 
     # 18+ AGE GATE
-    if story.category == "18+":
+    if story.category == ADULT_CATEGORY:
         verified_stories = session.get("age_verified_stories", [])
         if not isinstance(verified_stories, list):
             verified_stories = []
@@ -485,10 +538,91 @@ def view_story(slug):
         reaction_counts=reaction_counts,
         user_reaction_type=user_reaction_type,
         comments=comments,
+        related=related_stories(story),
         comment_held=(request.args.get("comment") == "held")
     ))
-    if story.category == "18+":
+    if story.category == ADULT_CATEGORY:
         response.headers["X-Robots-Tag"] = "noindex, nofollow"
+    return response
+
+
+RELATED_SIZE = 3
+
+
+def related_stories(story):
+    """Up to 3 other published stories from the same category, most loved
+    first (ties: newest). Only called after the age gate, so an 18+ story's
+    related list (all 18+, since it is the same category) is only shown to
+    a reader who has already confirmed their age; every one of those links
+    still asks again on its own page. Any other story never gets 18+ ones."""
+    query = Story.query.filter(
+        Story.published == True,
+        Story.id != story.id,
+        db.func.lower(Story.category) == (story.category or "").lower(),
+    )
+    if story.category != ADULT_CATEGORY:
+        query = query.filter(Story.category != ADULT_CATEGORY)
+    return sorted_stories(query, "loved").limit(RELATED_SIZE).all()
+
+
+# ============================================================
+# SAVED STORIES AND CONTINUE READING
+# The reader's list lives in their browser (no accounts). The page sends the
+# slugs it holds and gets back only the published stories among them.
+# ============================================================
+
+SAVED_MAX = 50
+_SLUG_SHAPE = re.compile(r"^[a-z0-9][a-z0-9-]{0,219}$")
+
+
+def requested_slugs(raw):
+    """Valid, distinct slugs in the order given, at most SAVED_MAX."""
+    slugs = []
+    for part in (raw or "")[:SAVED_MAX * 230].split(","):
+        part = part.strip().lower()
+        if _SLUG_SHAPE.match(part) and part not in slugs:
+            slugs.append(part)
+            if len(slugs) == SAVED_MAX:
+                break
+    return slugs
+
+
+def reader_item(story):
+    adult = story.category == ADULT_CATEGORY
+    return {
+        "slug": story.slug,
+        "title": story.title,
+        "author": story.author,
+        "category": story.category,
+        "adult": adult,
+        "excerpt": None if adult else make_excerpt(story.content, 150),  # no 18+ text
+        "reading_minutes": reading_minutes(story.content),
+        "read_count": story.read_count or 0,
+        "published_at": story.shown_at.strftime("%Y-%m-%d"),
+        "published_label": story.shown_at.strftime("%b %d, %Y"),
+        "url": url_for("view_story", slug=story.slug),
+    }
+
+
+@app.route("/stories/saved")
+def saved_stories():
+    response = make_response(render_template("stories/saved.html"))
+    response.headers["X-Robots-Tag"] = "noindex"
+    return response
+
+
+@app.route("/stories/saved/data")
+def saved_stories_data():
+    if not rate_ok("saved", 60, 60):
+        return jsonify(error="too many requests"), 429
+    slugs = requested_slugs(request.args.get("slugs"))
+    found = {}
+    if slugs:
+        found = {s.slug: s for s in Story.query.filter(
+            Story.slug.in_(slugs), Story.published == True)}
+    response = jsonify(stories=[reader_item(found[s]) for s in slugs if s in found])
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["X-Robots-Tag"] = "noindex"
     return response
 
 
@@ -501,7 +635,7 @@ def verify_age(slug):
 
     story = Story.query.filter_by(slug=slug, published=True).first_or_404()
 
-    if story.category != "18+":
+    if story.category != ADULT_CATEGORY:
         return redirect(url_for("view_story", slug=story.slug))
 
     verified_stories = session.get("age_verified_stories", [])
@@ -903,7 +1037,11 @@ def edit_story(story_id):
     if request.method == "POST":
 
         title = clean_text(request.form.get("title"), TITLE_MAX)
-        category = clean_category(request.form.get("category"))
+        posted = request.form.get("category")
+        if posted is not None and posted == story.category and not canonical_category(posted):
+            category = story.category      # an old category not on the list: left as it is
+        else:
+            category = clean_category(posted)
         content = clean_text(request.form.get("content"), CONTENT_MAX)
         author = clean_text(request.form.get("author"), AUTHOR_MAX)
 
@@ -1372,6 +1510,7 @@ def feed_item(story, excerpt_chars):
         "title": story.title,
         "author": story.author,
         "category": story.category,
+        "category_slug": category_slug(story.category),
         "excerpt": make_excerpt(story.content, excerpt_chars),
         "reading_minutes": reading_minutes(story.content),
         "url": url_for("view_story", slug=story.slug, _external=True),
@@ -1383,7 +1522,28 @@ def feed_item(story, excerpt_chars):
 
 
 def feed_query():
-    return Story.query.filter(Story.published == True, Story.category != "18+")
+    return Story.query.filter(Story.published == True, Story.category != ADULT_CATEGORY)
+
+
+@app.route("/api/categories")
+def api_categories():
+    """The one category list, for Mkuu: name, slug and published-story count.
+    Same access and rate rules as the other feed reads. 18+ is listed (marked
+    adult) so the list is complete, but the feed itself never returns it."""
+
+    if not feed_authorized(request.headers):
+        return jsonify(error="unauthorized"), 401
+
+    if not feed_rate_ok(request.headers):
+        return jsonify(error="too many requests"), 429
+
+    counts = category_story_counts()
+    response = jsonify(categories=[
+        {"name": c.name, "slug": c.slug, "count": counts[c.name], "adult": c.name == ADULT_CATEGORY}
+        for c in CATEGORY_LIST
+    ])
+    response.headers["Cache-Control"] = "public, max-age=300"
+    return response
 
 
 @app.route("/api/stories")
@@ -1399,11 +1559,21 @@ def api_stories():
     page = max(request.args.get("page", 1, type=int), 1)
     excerpt_chars = min(max(request.args.get("excerpt", 240, type=int), 100), 600)
 
-    pagination = feed_query().order_by(
+    # ?category= (name or slug, any case). Unknown: an empty list, not an error.
+    query = feed_query()
+    category_arg = (request.args.get("category") or "").strip()
+    found = find_category(category_arg) if category_arg else None
+    if found:
+        query = query.filter(db.func.lower(Story.category) == found.name.lower())
+    elif category_arg:
+        query = query.filter(db.false())
+
+    pagination = query.order_by(
         *publish_order()
     ).paginate(page=page, per_page=limit, error_out=False)
 
     response = jsonify({
+        "category": found.name if found else None,
         "stories": [feed_item(x, excerpt_chars) for x in pagination.items],
         "page": page,
         "pages": pagination.pages,
@@ -1482,7 +1652,7 @@ def api_submissions():
 
     title = clean_text(str(data.get("title") or ""), TITLE_MAX)
     content = clean_text(str(data.get("content") or ""), CONTENT_MAX)
-    category = clean_category(str(data.get("category") or ""))
+    category = clean_category(data.get("category"))   # not text or not on the list: General
     author = clean_text(str(data.get("author") or ""), AUTHOR_MAX) or "Anonymous"
     if len(title) < 3 or len(content) < 100:
         return jsonify(error="Please write a title and a longer story."), 400

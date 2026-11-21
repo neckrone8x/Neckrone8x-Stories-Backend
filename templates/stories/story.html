@@ -52,14 +52,15 @@
 {% endblock %}
 
 {% block main_class %}page page-story{% endblock %}
+{% block body_class %}is-story{% endblock %}
 
 {% block content %}
 
-    <article class="story" id="story">
+    <article class="story" id="story" data-slug="{{ story.slug }}">
 
         <header class="story-head">
             <a href="{{ url_for('stories') }}" class="back-link">{{ icon('arrow-left', 16) }}<span>All stories</span></a>
-            <a href="{{ url_for('stories', category=story.category) }}" class="tag">{{ story.category }}</a>
+            <a href="{{ url_for('stories', category=category_slug(story.category)) }}" class="tag">{{ story.category }}</a>
             <h1 class="story-title">{{ story.title }}</h1>
             <p class="story-byline">By <strong>{{ story.author }}</strong>{% include 'stories/_verified_mark.html' %}</p>
             <ul class="story-meta">
@@ -69,6 +70,38 @@
             </ul>
             <div class="reactions-top" role="group" aria-label="React to this story">
                 {{ reaction_bar('top') }}
+            </div>
+
+            {#- Save and reading settings need the browser's storage and the
+                script, so they start hidden and stories.js shows them. -#}
+            <div class="story-tools">
+                <button type="button" class="tool-button bookmark-button" data-bookmark="{{ story.slug }}"
+                        aria-pressed="false" hidden>
+                    {{ icon('bookmark', 18) }}<span>Save</span>
+                </button>
+                <button type="button" class="tool-button" id="readingToggle"
+                        aria-expanded="false" aria-controls="readingPanel" hidden>
+                    <span class="aa" aria-hidden="true">Aa</span><span>Text<span class="visually-hidden"> and background settings</span></span>
+                </button>
+            </div>
+
+            <div class="reading-panel" id="readingPanel" role="group" aria-labelledby="reading-title" hidden>
+                <h2 class="reading-panel-title" id="reading-title">Reading settings</h2>
+                <fieldset class="reading-sizes">
+                    <legend>Text size</legend>
+                    {% for value, short, name in [('s', 'S', 'small'), ('m', 'M', 'medium'), ('l', 'L', 'large'), ('xl', 'XL', 'extra large')] %}
+                        <label class="size-option" for="text-size-{{ value }}">
+                            <input type="radio" id="text-size-{{ value }}" name="text-size" value="{{ value }}"{% if value == 'm' %} checked{% endif %}>
+                            <span>{{ short }}<span class="visually-hidden"> ({{ name }})</span></span>
+                        </label>
+                    {% endfor %}
+                </fieldset>
+                <label class="sepia-option" for="sepiaToggle">
+                    <input type="checkbox" id="sepiaToggle">
+                    <span class="sepia-switch" aria-hidden="true"></span>
+                    <span>Sepia background</span>
+                </label>
+                <button type="button" class="button button-small button-ghost" id="readingDone">Done</button>
             </div>
         </header>
 
@@ -87,20 +120,23 @@
 
         <section class="panel" aria-labelledby="share-title">
             <h2 id="share-title" class="panel-title">Share this story</h2>
-            <div class="share">
-                <a class="share-button" target="_blank" rel="noopener noreferrer"
+            <div class="share" data-share-title="{{ story.title }}" data-share-url="{{ story_url }}">
+                <button type="button" class="share-button share-native" id="shareNative" hidden>
+                    {{ icon('share', 18) }}<span>Share</span>
+                </button>
+                <a class="share-button share-alt" target="_blank" rel="noopener noreferrer"
                    href="https://wa.me/?text={{ ('Read this story on Neckrone8x: ' ~ story.title ~ ' ' ~ story_url)|urlencode }}">
                     {{ icon('whatsapp', 18) }}<span>WhatsApp</span>
                 </a>
-                <a class="share-button" target="_blank" rel="noopener noreferrer"
+                <a class="share-button share-alt" target="_blank" rel="noopener noreferrer"
                    href="https://www.facebook.com/sharer/sharer.php?u={{ story_url|urlencode }}">
                     {{ icon('facebook', 18) }}<span>Facebook</span>
                 </a>
-                <a class="share-button" target="_blank" rel="noopener noreferrer"
+                <a class="share-button share-alt" target="_blank" rel="noopener noreferrer"
                    href="https://twitter.com/intent/tweet?text={{ ('Read this story on Neckrone8x: ' ~ story.title)|urlencode }}&amp;url={{ story_url|urlencode }}">
                     {{ icon('x', 18) }}<span>Post on X</span>
                 </a>
-                <button type="button" class="share-button" id="copyLink" data-url="{{ story_url }}">
+                <button type="button" class="share-button share-alt" id="copyLink" data-url="{{ story_url }}">
                     {{ icon('link', 18) }}<span>Copy link</span>
                 </button>
             </div>
@@ -147,6 +183,26 @@
                 <p class="comments-empty">No comments yet. Be the first to share your thoughts.</p>
             {% endif %}
         </section>
+
+        {% if related %}
+            <section class="panel related" aria-labelledby="related-title">
+                <h2 id="related-title" class="panel-title">More {{ story.category }} stories</h2>
+                <ul class="related-list">
+                    {% for item in related %}
+                        <li class="mini-card">
+                            {% if item.category == '18+' %}<span class="tag tag-adult">{{ icon('adult', 14) }}18+</span>{% endif %}
+                            <h3 class="mini-title">
+                                <a href="{{ url_for('view_story', slug=item.slug) }}" class="card-link">{{ item.title }}</a>
+                            </h3>
+                            <p class="mini-meta">
+                                By {{ item.author }} · {{ reading_minutes(item.content) }} min read ·
+                                <time datetime="{{ item.shown_at.strftime('%Y-%m-%d') }}">{{ item.shown_at.strftime('%b %d, %Y') }}</time>
+                            </p>
+                        </li>
+                    {% endfor %}
+                </ul>
+            </section>
+        {% endif %}
 
         <p class="story-end">
             <a href="{{ url_for('stories') }}" class="button button-ghost">{{ icon('arrow-left', 16) }}<span>Back to all stories</span></a>

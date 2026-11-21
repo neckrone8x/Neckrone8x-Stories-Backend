@@ -123,7 +123,7 @@ class CardCountTests(Step4Base):
         self.assertEqual(len(self.order(self.html("/stories?category=Life&sort=read"))), 6)
         self.assertEqual(len(self.order(self.html("/stories?category=Life&sort=read&page=2"))), 1)
         self.assertEqual(one, six)
-        self.assertLessEqual(six, 4)   # stories, total count, reactions, comments
+        self.assertLessEqual(six, 5)   # stories, total count, reactions, comments, chip counts
 
 
 # ───────────────────────── 2. sorting ─────────────────────────
@@ -152,8 +152,11 @@ class SortTests(Step4Base):
 
     def test_control_marks_the_current_sort_and_featured_only_on_newest(self):
         html = self.html("/stories?sort=read")
-        self.assertRegex(html, r'href="/stories\?sort=read"\s+class="sort-option" aria-current="true">Most read<')
-        self.assertIn('href="/stories"\n                   class="sort-option">Newest<', html)
+        # full label = the link's name; the short one (shown below 480px) is hidden from screen readers
+        self.assertRegex(html, r'href="/stories\?sort=read"\s+class="sort-option" aria-current="true">'
+                               r'<span class="sort-full">Most read</span><span class="sort-short" aria-hidden="true">Read</span><')
+        self.assertIn('href="/stories"\n                   class="sort-option"><span class="sort-full">Newest</span>', html)
+        self.assertIn('<span class="sort-full">Most loved</span><span class="sort-short" aria-hidden="true">Loved</span>', html)
         self.assertIn("Most read stories", html)
         self.assertNotIn("card-featured", html)
         self.assertIn("card-featured", self.html("/stories"))
@@ -169,13 +172,13 @@ class SortTests(Step4Base):
         self.assertIn("8 stories", page1)
         self.assertIn('href="/stories?page=2&amp;search=mango&amp;sort=read"', page1)
         self.assertIn('<input type="hidden" name="sort" value="read">', page1)
-        self.assertIn('href="/stories?category=Life&amp;search=mango&amp;sort=read"', page1)
+        self.assertIn('href="/stories?category=life&amp;search=mango&amp;sort=read"', page1)
         page2 = self.html("/stories?search=mango&sort=read&page=2")
         self.assertEqual(self.order(page2), ["mango-1", "mango-0"])
         self.assertIn('href="/stories?page=1&amp;search=mango&amp;sort=read"', page2)
         cat = self.html("/stories?category=life&sort=read")
         self.assertEqual(self.order(cat)[:3], ["c", "mango-7", "mango-6"])   # C (90 reads) is Life too
-        self.assertIn('href="/stories?category=Life&amp;sort=loved"', cat)  # sort links keep the category
+        self.assertIn('href="/stories?category=life&amp;sort=loved"', cat)  # sort links keep the category (slug)
 
 
 # ───────────────────────── 3. trending ─────────────────────────

@@ -4,6 +4,7 @@
 {% block title %}{% if search %}Search: {{ search }} | {% elif category %}{{ category }} | {% endif %}Neckrone8x Stories{% endblock %}
 
 {% block meta %}
+    {% if unknown_category %}<meta name="robots" content="noindex">{% endif %}
     <link rel="canonical" href="{{ url_for('stories', _external=True) }}">
     <meta property="og:type" content="website">
     <meta property="og:title" content="Neckrone8x Stories">
@@ -12,6 +13,16 @@
 
 {#- ?sort= is left out of links when it is the default, so URLs stay short -#}
 {% set sort_arg = sort if sort != 'newest' else None %}
+{#- below 480px the sort options show these; screen readers always get the full label -#}
+{% set sort_short = {'newest': 'Newest', 'read': 'Read', 'loved': 'Loved'} %}
+{#- links use the category's slug (?category=mystery-horror) -#}
+{% set category_arg = category_slug(category) if category else None %}
+
+{%- macro chip(item) -%}
+<a href="{{ url_for('stories', category=item.slug, search=search or None, sort=sort_arg) }}" class="chip"{% if category == item.name %} aria-current="page"{% endif %}>
+    <span>{{ item.name }}</span><span class="chip-count"><span class="visually-hidden">, </span>{{ item.count }}<span class="visually-hidden"> {{ 'story' if item.count == 1 else 'stories' }}</span></span>
+</a>
+{%- endmacro -%}
 
 {%- macro story_meta(story) -%}
 <ul class="story-meta">
@@ -35,6 +46,13 @@
     {% endif %}
     <li class="rx-comments">{{ icon('chat', 16) }}<span>{{ st.comments }} {{ 'comment' if st.comments == 1 else 'comments' }}</span></li>
 </ul>
+{%- endmacro -%}
+
+{#- Small save button on a card. Hidden until stories.js knows the browser
+    can store the list (storage blocked or no script: the card is unchanged). -#}
+{%- macro save_button(story) -%}
+<button type="button" class="card-save" data-bookmark="{{ story.slug }}" aria-pressed="false"
+        aria-label="Save “{{ story.title }}” for later" hidden>{{ icon('bookmark', 20) }}</button>
 {%- endmacro -%}
 
 {%- macro category_tag(story) -%}
@@ -66,18 +84,51 @@
             <span class="search-icon">{{ icon('search', 20) }}</span>
             <input type="search" id="search" name="search" value="{{ search }}"
                    placeholder="Search titles, authors, words…" maxlength="100" autocomplete="off">
-            {% if category %}<input type="hidden" name="category" value="{{ category }}">{% endif %}
+            {% if category %}<input type="hidden" name="category" value="{{ category_arg }}">{% endif %}
             {% if sort_arg %}<input type="hidden" name="sort" value="{{ sort_arg }}">{% endif %}
             <button type="submit" class="button button-small">Search</button>
         </form>
 
         <nav class="chips" aria-label="Categories">
-            <a href="{{ url_for('stories', search=search or None, sort=sort_arg) }}" class="chip"{% if not category %} aria-current="page"{% endif %}>All</a>
-            {% for item in categories %}
-                <a href="{{ url_for('stories', category=item, search=search or None, sort=sort_arg) }}" class="chip"{% if category|lower == item|lower %} aria-current="page"{% endif %}>{{ item }}</a>
-            {% endfor %}
+            <a href="{{ url_for('stories', search=search or None, sort=sort_arg) }}" class="chip"{% if not category and not unknown_category %} aria-current="page"{% endif %}>All</a>
+            {% for item in chips %}{{ chip(item) }}{% endfor %}
+            {% if more_chips %}
+                {#- A native disclosure: opens with a tap, Enter or Space and works
+                    without JavaScript; the links are ordinary category links. -#}
+                <details class="chips-more" id="chipsMore">
+                    <summary class="chip chip-more">
+                        <span>More<span class="visually-hidden"> categories</span></span>
+                        <span class="chip-count" aria-hidden="true">+{{ more_chips|length }}</span>
+                    </summary>
+                    <div class="chips-more-panel" role="group" aria-label="More categories">
+                        {% for item in more_chips %}{{ chip(item) }}{% endfor %}
+                    </div>
+                </details>
+            {% endif %}
         </nav>
     </section>
+
+    {% if pagination.page == 1 and not search and not category and not unknown_category %}
+        {#- Filled by stories.js from the progress kept in this browser. -#}
+        <section class="continue" id="continueReading" aria-labelledby="continue-title"
+                 data-endpoint="{{ url_for('saved_stories_data') }}" hidden>
+            <div class="continue-head">
+                <h2 id="continue-title" class="trending-title">{{ icon('book', 20) }}<span>Continue reading</span></h2>
+                <button type="button" class="link-button" id="continueClear">Clear<span class="visually-hidden"> continue reading</span></button>
+            </div>
+            <ol class="trending-list" id="continueList"></ol>
+            <template id="continueTemplate">
+                <li class="trend-card continue-card">
+                    <div class="trend-body">
+                        <span class="tag" data-field="tag"></span>
+                        <h3 class="trend-title"><a class="card-link continue-link" data-field="link"></a></h3>
+                        <p class="trend-stats" data-field="stats"></p>
+                        <span class="continue-bar" aria-hidden="true"><span data-field="bar"></span></span>
+                    </div>
+                </li>
+            </template>
+        </section>
+    {% endif %}
 
     {% if trending %}
         <section class="trending" aria-labelledby="trending-title">
@@ -104,8 +155,8 @@
 
     <section class="listing" aria-labelledby="listing-title">
         <div class="listing-head">
-            <h2 id="listing-title">
-                {% if search %}Results for “{{ search }}”{% elif category %}{{ category }} stories{% elif sort == 'read' %}Most read stories{% elif sort == 'loved' %}Most loved stories{% else %}Latest stories{% endif %}
+            <h2 id="listing-title" tabindex="-1">
+                {% if search %}Results for “{{ search }}”{% elif category %}{{ category }} stories{% elif unknown_category %}No such category{% elif sort == 'read' %}Most read stories{% elif sort == 'loved' %}Most loved stories{% else %}Latest stories{% endif %}
             </h2>
             <p class="listing-count">{{ pagination.total }} {{ 'story' if pagination.total == 1 else 'stories' }}</p>
         </div>
@@ -113,8 +164,8 @@
         <nav class="sort" aria-label="Sort stories">
             <span class="sort-label" aria-hidden="true">Sort</span>
             {% for key, label in sorts.items() %}
-                <a href="{{ url_for('stories', search=search or None, category=category or None, sort=(key if key != 'newest' else None)) }}"
-                   class="sort-option"{% if sort == key %} aria-current="true"{% endif %}>{{ label }}</a>
+                <a href="{{ url_for('stories', search=search or None, category=category_arg, sort=(key if key != 'newest' else None)) }}"
+                   class="sort-option"{% if sort == key %} aria-current="true"{% endif %}><span class="sort-full">{{ label }}</span><span class="sort-short" aria-hidden="true">{{ sort_short[key] }}</span></a>
             {% endfor %}
         </nav>
 
@@ -129,6 +180,7 @@
                         <div class="card-top">
                             <span class="featured-label">Featured</span>
                             {{ category_tag(story) }}
+                            {{ save_button(story) }}
                         </div>
                         <h3 class="card-title">
                             <a href="{{ url_for('view_story', slug=story.slug) }}" class="card-link">{{ story.title }}</a>
@@ -146,7 +198,7 @@
                 <div class="card-grid">
                     {% for story in rest %}
                         <article class="card">
-                            <div class="card-top">{{ category_tag(story) }}</div>
+                            <div class="card-top">{{ category_tag(story) }}{{ save_button(story) }}</div>
                             <h3 class="card-title">
                                 <a href="{{ url_for('view_story', slug=story.slug) }}" class="card-link">{{ story.title }}</a>
                             </h3>
@@ -159,6 +211,13 @@
                 </div>
             {% endif %}
 
+        {% elif unknown_category %}
+            <div class="empty">
+                <span class="empty-icon">{{ icon('search', 28) }}</span>
+                <h3>No stories found</h3>
+                <p>There is no “{{ unknown_category }}” category. Try one of the categories above.</p>
+                <a href="{{ url_for('stories') }}" class="button button-ghost">See all stories</a>
+            </div>
         {% elif search or category %}
             <div class="empty">
                 <span class="empty-icon">{{ icon('search', 28) }}</span>
@@ -183,7 +242,7 @@
     {% if pagination.pages > 1 %}
         <nav class="pagination" aria-label="Pages">
             {% if pagination.has_prev %}
-                <a href="{{ url_for('stories', page=pagination.prev_num, search=search or None, category=category or None, sort=sort_arg) }}" class="page-link" rel="prev">
+                <a href="{{ url_for('stories', page=pagination.prev_num, search=search or None, category=category_arg, sort=sort_arg) }}" class="page-link" rel="prev">
                     {{ icon('arrow-left', 16) }}<span>Previous</span>
                 </a>
             {% endif %}
@@ -193,7 +252,7 @@
                     {% if page_number == pagination.page %}
                         <span class="page-link" aria-current="page">{{ page_number }}</span>
                     {% else %}
-                        <a href="{{ url_for('stories', page=page_number, search=search or None, category=category or None, sort=sort_arg) }}" class="page-link" aria-label="Page {{ page_number }}">{{ page_number }}</a>
+                        <a href="{{ url_for('stories', page=page_number, search=search or None, category=category_arg, sort=sort_arg) }}" class="page-link" aria-label="Page {{ page_number }}">{{ page_number }}</a>
                     {% endif %}
                 {% else %}
                     <span class="page-gap" aria-hidden="true">…</span>
@@ -201,7 +260,7 @@
             {% endfor %}
 
             {% if pagination.has_next %}
-                <a href="{{ url_for('stories', page=pagination.next_num, search=search or None, category=category or None, sort=sort_arg) }}" class="page-link" rel="next">
+                <a href="{{ url_for('stories', page=pagination.next_num, search=search or None, category=category_arg, sort=sort_arg) }}" class="page-link" rel="next">
                     <span>Next</span>{{ icon('arrow-right', 16) }}
                 </a>
             {% endif %}

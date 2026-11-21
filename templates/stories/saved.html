@@ -1,0 +1,76 @@
+{% extends 'stories/base.html' %}
+{% from 'stories/_icons.html' import icon %}
+
+{% block title %}Saved stories | Neckrone8x Stories{% endblock %}
+{% block description %}Stories you saved to read later on this device.{% endblock %}
+
+{% block meta %}
+    <meta name="robots" content="noindex">
+{% endblock %}
+
+{% block content %}
+
+    <section class="saved-page" aria-labelledby="saved-title">
+        <div class="listing-head">
+            <h1 id="saved-title" class="saved-title" tabindex="-1">Saved stories</h1>
+            <p class="listing-count" id="savedCount" aria-live="polite"></p>
+        </div>
+        <p class="saved-lead">Saved on this device only. There is no account, so your list stays in this browser.</p>
+
+        {#- What the reader sees depends on their browser, so stories.js shows one
+            of these. Without the script, the <noscript> note is shown. -#}
+        <p class="saved-loading" id="savedLoading" role="status">Loading your saved stories…</p>
+
+        <noscript>
+            <div class="empty">
+                <span class="empty-icon">{{ icon('bookmark', 28) }}</span>
+                <h2>Saved stories need JavaScript</h2>
+                <p>Your list is kept in this browser, so the page needs JavaScript to read it.</p>
+                <a href="{{ url_for('stories') }}" class="button button-ghost">See all stories</a>
+            </div>
+        </noscript>
+
+        <div class="empty" id="savedEmpty" hidden>
+            <span class="empty-icon">{{ icon('bookmark', 28) }}</span>
+            <h2>No saved stories yet</h2>
+            <p>Tap the bookmark on any story to keep it here for later.</p>
+            <a href="{{ url_for('stories') }}" class="button">{{ icon('book', 18) }}<span>Browse stories</span></a>
+        </div>
+
+        <div class="empty" id="savedBlocked" hidden>
+            <span class="empty-icon">{{ icon('lock', 28) }}</span>
+            <h2>Saving is turned off in this browser</h2>
+            <p>Your browser is blocking site storage (for example in some private windows), so stories cannot be saved here.</p>
+            <a href="{{ url_for('stories') }}" class="button button-ghost">See all stories</a>
+        </div>
+
+        <div class="empty" id="savedError" hidden>
+            <span class="empty-icon">{{ icon('alert', 28) }}</span>
+            <h2>Your saved stories could not be loaded</h2>
+            <p>Please check your connection and try again.</p>
+            <button type="button" class="button button-ghost" id="savedRetry">Try again</button>
+        </div>
+
+        <ul class="card-grid saved-list" id="savedList"
+            data-endpoint="{{ url_for('saved_stories_data') }}" hidden></ul>
+
+        <template id="savedTemplate">
+            <li class="card saved-card">
+                <div class="card-top"><span class="tag" data-field="tag"></span></div>
+                <h2 class="card-title"><a class="card-link" data-field="link"></a></h2>
+                <p class="card-excerpt" data-field="excerpt"></p>
+                <p class="card-author" data-field="author"></p>
+                <ul class="story-meta">
+                    <li>{{ icon('clock', 16) }}<span data-field="minutes"></span></li>
+                    <li>{{ icon('calendar', 16) }}<time data-field="date"></time></li>
+                </ul>
+                <div class="card-actions">
+                    <button type="button" class="button button-small button-ghost saved-remove" data-field="remove">
+                        {{ icon('close', 16) }}<span>Remove</span>
+                    </button>
+                </div>
+            </li>
+        </template>
+    </section>
+
+{% endblock %}

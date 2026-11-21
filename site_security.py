@@ -32,10 +32,12 @@ from markupsafe import Markup
 from werkzeug.middleware.proxy_fix import ProxyFix
 from werkzeug.security import check_password_hash
 
-CATEGORIES = ["General", "Confession", "Experience", "News", "Relationship",
-              "Marriage", "Life", "Novels", "18+", "Other"]
+# The category list lives in categories.py (the one list); these names stay
+# importable from here so older imports keep working.
+from categories import CATEGORIES, canonical_category, clean_category  # noqa: E402,F401
+
 RESERVED_SLUGS = {"submit", "new", "admin", "api", "feed", "sitemap", "robots",
-                  "static", "stories", "login", "logout", "health"}
+                  "static", "stories", "login", "logout", "health", "saved"}
 ADMIN_SESSION_HOURS = 8
 VISITOR_COOKIE = "n8x_vid"
 
@@ -361,19 +363,6 @@ _CONTROL = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
 
 def clean_text(value, max_len: int) -> str:
     return _CONTROL.sub("", (value or "")).strip()[:max_len]
-
-
-def canonical_category(value):
-    """The exact category name, or None if it is not one of ours."""
-    v = (value or "").strip().lower()
-    for c in CATEGORIES:
-        if c.lower() == v:
-            return c
-    return None
-
-
-def clean_category(value) -> str:
-    return canonical_category(value) or "General"
 
 
 def make_slug(title: str, exists) -> str:

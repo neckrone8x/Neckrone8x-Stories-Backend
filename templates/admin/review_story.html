@@ -55,7 +55,7 @@
                     <div>
                         <h2>{{ story.title }}</h2>
                         <p>
-                            {{ story.category }} ·
+                            {{ story.category }}{% if story.category not in categories %} (not on the category list){% endif %} ·
                             {{ story.author }}{% include 'admin/_tier.html' %} ·
                             Submitted {{ story.created_at.strftime("%B %d, %Y") }}
                         </p>

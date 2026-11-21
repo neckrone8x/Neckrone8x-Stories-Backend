@@ -59,7 +59,11 @@
                     <div class="form-group">
                         <label for="category">Category</label>
                         <select id="category" name="category" required>
-                            {% for item in ['General', 'Confession', 'Experience', 'News', 'Relationship', 'Marriage', 'Life', 'Novels', '18+', 'Other'] %}
+                            {% if story.category not in categories %}
+                                {#- an old category that is no longer on the list stays until changed -#}
+                                <option value="{{ story.category }}" selected>{{ story.category }} (old, not on the list)</option>
+                            {% endif %}
+                            {% for item in categories %}
                                 <option value="{{ item }}"{% if story.category == item %} selected{% endif %}>{{ item }}</option>
                             {% endfor %}
                         </select>

@@ -31,7 +31,7 @@
         <div class="field">
             <label for="category">Category</label>
             <select id="category" name="category">
-                {% for item in ['General', 'Confession', 'Experience', 'News', 'Relationship', 'Marriage', 'Life', 'Novels', '18+', 'Other'] %}
+                {% for item in categories %}
                     <option value="{{ item }}"{% if selected_category == item %} selected{% endif %}>{{ item }}</option>
                 {% endfor %}
             </select>

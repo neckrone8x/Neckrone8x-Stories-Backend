@@ -160,7 +160,7 @@ class ListPageTests(LayoutBase):
 
     def test_category_chip_marks_the_current_one(self):
         html = self.c.get("/stories?category=life").get_data(as_text=True)
-        self.assertRegex(html, r'class="chip" aria-current="page">Life<')
+        self.assertRegex(html, r'class="chip" aria-current="page">\s*<span>Life</span>')
         self.assertNotIn("card-featured", html)       # no featured story when filtered
         self.assertIn("Life stories", html)
 
