@@ -1,6 +1,28 @@
 {% extends 'stories/base.html' %}
 {% from 'stories/_icons.html' import icon %}
 
+{#- The reaction buttons. Shown twice (under the byline and after the story);
+    stories.js keeps both sets in step without a reload. Without JavaScript
+    each button is an ordinary form post. -#}
+{%- macro reaction_bar(place) -%}
+{% set faces = {'love': '❤️', 'like': '👍', 'laugh': '😂', 'wow': '😮', 'sad': '😢'} %}
+<div class="reactions reactions-{{ place }}">
+    {% for rtype in reaction_types %}
+        {% set n = reaction_counts[rtype] %}
+        <form method="POST" action="{{ url_for('react_to_story', slug=story.slug, reaction_type=rtype) }}" class="reaction-form">
+            <button type="submit" class="reaction{% if user_reaction_type == rtype %} is-active{% endif %}"
+                    data-reaction="{{ rtype }}" data-label="{{ reaction_labels[rtype] }}"
+                    aria-label="{{ reaction_labels[rtype] }}, {{ n }} {{ 'reaction' if n == 1 else 'reactions' }}"
+                    aria-pressed="{{ 'true' if user_reaction_type == rtype else 'false' }}">
+                <span class="reaction-face" aria-hidden="true">{{ faces[rtype] }}</span>
+                <span class="reaction-label">{{ reaction_labels[rtype] }}</span>
+                <span class="reaction-count{% if not n %} is-zero{% endif %}">{{ n }}</span>
+            </button>
+        </form>
+    {% endfor %}
+</div>
+{%- endmacro -%}
+
 {% set share_image = absolute_image_url(story.cover_image) %}
 {% set story_url = url_for('view_story', slug=story.slug, _external=True) %}
 {% set summary = excerpt(story.content, 160) %}
@@ -45,6 +67,9 @@
                 <li>{{ icon('clock', 16) }}<span>{{ reading_minutes(story.content) }} min read</span></li>
                 <li>{{ icon('eye', 16) }}<span>{{ story.read_count or 0 }} {{ 'read' if story.read_count == 1 else 'reads' }}</span></li>
             </ul>
+            <div class="reactions-top" role="group" aria-label="React to this story">
+                {{ reaction_bar('top') }}
+            </div>
         </header>
 
         {% if story.cover_image %}
@@ -55,20 +80,9 @@
 
         <section class="panel" id="reactions" aria-labelledby="reactions-title">
             <h2 id="reactions-title" class="panel-title">How did this story make you feel?</h2>
-            {% set emoji_map = {'love': '❤️', 'like': '👍', 'laugh': '😂', 'wow': '😮', 'sad': '😢'} %}
-            {% set label_map = {'love': 'Love', 'like': 'Like', 'laugh': 'Laugh', 'wow': 'Wow', 'sad': 'Sad'} %}
-            <div class="reactions">
-                {% for rtype in ['love', 'like', 'laugh', 'wow', 'sad'] %}
-                    <form method="POST" action="{{ url_for('react_to_story', slug=story.slug, reaction_type=rtype) }}">
-                        <button type="submit" class="reaction{% if user_reaction_type == rtype %} is-active{% endif %}"
-                                aria-pressed="{{ 'true' if user_reaction_type == rtype else 'false' }}">
-                            <span class="reaction-face" aria-hidden="true">{{ emoji_map[rtype] }}</span>
-                            <span class="reaction-label">{{ label_map[rtype] }}</span>
-                            {% if reaction_counts[rtype] > 0 %}<span class="reaction-count">{{ reaction_counts[rtype] }}</span>{% endif %}
-                        </button>
-                    </form>
-                {% endfor %}
-            </div>
+            {{ reaction_bar('bottom') }}
+            <p class="reaction-status visually-hidden" id="reactionStatus" role="status" aria-live="polite"></p>
+            <p class="reaction-error" id="reactionError" role="alert" hidden></p>
         </section>
 
         <section class="panel" aria-labelledby="share-title">

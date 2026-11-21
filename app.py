@@ -18,6 +18,7 @@ from datetime import datetime, timedelta
 import logging
 import os
 import re
+import time
 
 from dotenv import load_dotenv
 
@@ -100,6 +101,8 @@ def inject_template_globals():
         "main_site_url": MAIN_SITE_URL,
         "excerpt": make_excerpt,
         "reading_minutes": reading_minutes,
+        "reaction_types": REACTION_TYPES,
+        "reaction_labels": REACTION_LABELS,
     }
 
 
@@ -297,7 +300,11 @@ def stories():
     if category:
         query = query.filter(Story.category == category)
 
-    pagination = query.order_by(*publish_order()).paginate(
+    sort = request.args.get("sort", "newest")
+    if sort not in SORTS:
+        sort = "newest"
+
+    pagination = sorted_stories(query, sort).paginate(
         page=page, per_page=6, error_out=False
     )
 
@@ -305,14 +312,131 @@ def stories():
 
     categories = CATEGORIES
 
+    # The Trending row: page 1 of the plain list only.
+    trending = []
+    if pagination.page == 1 and not search and not category:
+        trending = trending_stories()
+
     return render_template(
         "stories/index.html",
         stories=stories,
         search=search,
         category=category,
         categories=categories,
-        pagination=pagination
+        pagination=pagination,
+        sort=sort,
+        sorts=SORTS,
+        stats=card_stats(stories + [story for story, _ in trending]),
+        trending=trending,
     )
+
+
+# ============================================================
+# LIST HELPERS: sorting, counts for a page of cards, trending
+# ============================================================
+
+SORTS = {"newest": "Newest", "read": "Most read", "loved": "Most loved"}
+
+
+def sorted_stories(query, sort):
+    """Newest (publish date), Most read (reads) or Most loved (all reactions).
+    Ties fall back to the newest first."""
+    if sort == "read":
+        return query.order_by(db.func.coalesce(Story.read_count, 0).desc(), *publish_order())
+    if sort == "loved":
+        totals = db.session.query(
+            Reaction.story_id.label("sid"), db.func.count(Reaction.id).label("n")
+        ).group_by(Reaction.story_id).subquery()
+        return query.outerjoin(totals, totals.c.sid == Story.id).order_by(
+            db.func.coalesce(totals.c.n, 0).desc(), *publish_order())
+    return query.order_by(*publish_order())
+
+
+def card_stats(stories):
+    """Reaction and approved-comment counts for every card on the page, with
+    two grouped queries in total (not one per card)."""
+    ids = sorted({s.id for s in stories})
+    stats = {i: {"counts": {}, "total": 0, "top": [], "comments": 0} for i in ids}
+    if not ids:
+        return stats
+
+    for sid, rtype, n in db.session.query(
+        Reaction.story_id, Reaction.reaction_type, db.func.count(Reaction.id)
+    ).filter(Reaction.story_id.in_(ids)).group_by(
+        Reaction.story_id, Reaction.reaction_type
+    ):
+        if rtype in REACTION_TYPES:
+            stats[sid]["counts"][rtype] = n
+            stats[sid]["total"] += n
+
+    for sid, n in db.session.query(
+        Comment.story_id, db.func.count(Comment.id)
+    ).filter(Comment.story_id.in_(ids), Comment.approved == True).group_by(
+        Comment.story_id
+    ):
+        stats[sid]["comments"] = n
+
+    for item in stats.values():
+        item["top"] = sorted(
+            item["counts"].items(),
+            key=lambda kv: (-kv[1], REACTION_TYPES.index(kv[0]))
+        )[:3]
+    return stats
+
+
+TRENDING_DAYS = 7
+TRENDING_SIZE = 3
+TRENDING_MIN = 2
+TRENDING_TTL = 300  # seconds
+_trending_cache = {"at": None, "items": []}
+
+
+def compute_trending():
+    """Top stories of the last 7 days: score = 2 x reactions + reads (a
+    reaction is a stronger signal than an open). 18+ stories are left out of
+    this public row. Returns [{"id", "reactions", "reads"}], best first."""
+    since = datetime.utcnow() - timedelta(days=TRENDING_DAYS)
+    reactions = dict(db.session.query(
+        Reaction.story_id, db.func.count(Reaction.id)
+    ).filter(Reaction.created_at >= since).group_by(Reaction.story_id).all())
+    reads = dict(db.session.query(
+        StoryRead.story_id, db.func.count(StoryRead.id)
+    ).filter(StoryRead.read_at >= since).group_by(StoryRead.story_id).all())
+
+    candidates = set(reactions) | set(reads)
+    if not candidates:
+        return []
+    allowed = {sid for (sid,) in db.session.query(Story.id).filter(
+        Story.id.in_(candidates), Story.published == True, Story.category != "18+")}
+
+    items = [{"id": sid, "reactions": reactions.get(sid, 0), "reads": reads.get(sid, 0)}
+             for sid in allowed]
+    items.sort(key=lambda x: (-(2 * x["reactions"] + x["reads"]), -x["reactions"], -x["id"]))
+    return items[:TRENDING_SIZE]
+
+
+def clear_trending_cache():
+    _trending_cache["at"] = None
+    _trending_cache["items"] = []
+
+
+def trending_stories():
+    """[(story, {"reactions", "reads"}), ...] or [] when fewer than 2 qualify.
+    The ranking is kept in memory for 5 minutes; the stories themselves are
+    loaded fresh, so an unpublished one drops out at once."""
+    now = time.monotonic()
+    if _trending_cache["at"] is None or now - _trending_cache["at"] > TRENDING_TTL:
+        _trending_cache["items"] = compute_trending()
+        _trending_cache["at"] = now
+    items = _trending_cache["items"]
+    if len(items) < TRENDING_MIN:
+        return []
+
+    found = {s.id: s for s in Story.query.filter(
+        Story.id.in_([x["id"] for x in items]),
+        Story.published == True, Story.category != "18+")}
+    rows = [(found[x["id"]], x) for x in items if x["id"] in found]
+    return rows if len(rows) >= TRENDING_MIN else []
 
 
 # ============================================================
@@ -346,21 +470,8 @@ def view_story(slug):
         db.session.commit()
 
     # REACTIONS
-    reaction_types = ["love", "like", "laugh", "wow", "sad"]
-    reaction_counts = {rtype: 0 for rtype in reaction_types}
-
-    for rtype, total in db.session.query(
-        Reaction.reaction_type, db.func.count(Reaction.id)
-    ).filter(Reaction.story_id == story.id).group_by(Reaction.reaction_type).all():
-        if rtype in reaction_counts:
-            reaction_counts[rtype] = total
-
-    user_reaction = Reaction.query.filter_by(
-        story_id=story.id,
-        ip_address=visitor_ip
-    ).first()
-
-    user_reaction_type = user_reaction.reaction_type if user_reaction else None
+    reaction_counts = reaction_counts_for(story.id)
+    user_reaction_type = reaction_of(story.id, visitor_ip)
 
     # COMMENTS
     comments = Comment.query.filter_by(
@@ -410,15 +521,49 @@ def verify_age(slug):
 # REACT TO STORY
 # ============================================================
 
+REACTION_TYPES = ("love", "like", "laugh", "wow", "sad")
+REACTION_LABELS = {"love": "Love", "like": "Like", "laugh": "Laugh", "wow": "Wow", "sad": "Sad"}
+
+
+def reaction_counts_for(story_id):
+    counts = {rtype: 0 for rtype in REACTION_TYPES}
+    for rtype, total in db.session.query(
+        Reaction.reaction_type, db.func.count(Reaction.id)
+    ).filter(Reaction.story_id == story_id).group_by(Reaction.reaction_type).all():
+        if rtype in counts:
+            counts[rtype] = total
+    return counts
+
+
+def reaction_of(story_id, visitor):
+    mine = Reaction.query.filter_by(story_id=story_id, ip_address=visitor).first()
+    return mine.reaction_type if mine else None
+
+
+def wants_json():
+    """The story page's script sends this header; a plain form post does not."""
+    return request.headers.get("X-Requested-With") == "fetch"
+
+
+def reaction_state(story_id, visitor):
+    counts = reaction_counts_for(story_id)
+    return {"counts": counts, "total": sum(counts.values()),
+            "mine": reaction_of(story_id, visitor)}
+
+
 @app.route("/stories/<slug>/react/<reaction_type>", methods=["POST"])
 def react_to_story(slug, reaction_type):
 
     story = Story.query.filter_by(slug=slug, published=True).first_or_404()
 
-    if reaction_type not in {"love", "like", "laugh", "wow", "sad"}:
+    if reaction_type not in REACTION_TYPES:
+        if wants_json():
+            return jsonify(error="unknown reaction"), 400
         return redirect(url_for("view_story", slug=slug))
 
     if not rate_ok("react", 60, 3600):
+        if wants_json():
+            return jsonify(error="too many reactions"), 429
         return redirect(url_for("view_story", slug=slug) + "#reactions")
 
     visitor_ip = get_visitor_ip()
@@ -444,6 +589,10 @@ def react_to_story(slug, reaction_type):
 
     db.session.commit()
 
+    if wants_json():
+        response = jsonify(reaction_state(story.id, visitor_ip))
+        response.headers["Cache-Control"] = "no-store"
+        return response
     return redirect(url_for("view_story", slug=slug) + "#reactions")
 
 

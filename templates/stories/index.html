@@ -10,11 +10,30 @@
     <meta property="og:description" content="Real stories, confessions and experiences shared by the Neckrone8x community.">
 {% endblock %}
 
+{#- ?sort= is left out of links when it is the default, so URLs stay short -#}
+{% set sort_arg = sort if sort != 'newest' else None %}
+
 {%- macro story_meta(story) -%}
 <ul class="story-meta">
     <li>{{ icon('clock', 16) }}<span>{{ reading_minutes(story.content) }} min read</span></li>
     <li>{{ icon('eye', 16) }}<span>{{ story.read_count or 0 }} {{ 'read' if (story.read_count or 0) == 1 else 'reads' }}</span></li>
     <li>{{ icon('calendar', 16) }}<time datetime="{{ story.shown_at.strftime('%Y-%m-%d') }}">{{ story.shown_at.strftime('%b %d, %Y') }}</time></li>
+</ul>
+{%- endmacro -%}
+
+{#- Top 3 reactions (icon + number), the total, and approved comments. -#}
+{%- macro engagement(story) -%}
+{% set st = stats.get(story.id) or {'total': 0, 'top': [], 'comments': 0} %}
+<ul class="engagement">
+    {% if st.total %}
+        {% for rtype, n in st.top %}
+            <li class="rx rx-{{ rtype }}" title="{{ reaction_labels[rtype] }}">{{ icon(rtype, 16) }}<span class="visually-hidden">{{ reaction_labels[rtype] }}:</span><span class="rx-n">{{ n }}</span></li>
+        {% endfor %}
+        <li class="rx-total">{{ st.total }} {{ 'reaction' if st.total == 1 else 'reactions' }}</li>
+    {% else %}
+        <li class="rx-total rx-none">No reactions yet</li>
+    {% endif %}
+    <li class="rx-comments">{{ icon('chat', 16) }}<span>{{ st.comments }} {{ 'comment' if st.comments == 1 else 'comments' }}</span></li>
 </ul>
 {%- endmacro -%}
 
@@ -48,27 +67,59 @@
             <input type="search" id="search" name="search" value="{{ search }}"
                    placeholder="Search titles, authors, words…" maxlength="100" autocomplete="off">
             {% if category %}<input type="hidden" name="category" value="{{ category }}">{% endif %}
+            {% if sort_arg %}<input type="hidden" name="sort" value="{{ sort_arg }}">{% endif %}
             <button type="submit" class="button button-small">Search</button>
         </form>
 
         <nav class="chips" aria-label="Categories">
-            <a href="{{ url_for('stories', search=search or None) }}" class="chip"{% if not category %} aria-current="page"{% endif %}>All</a>
+            <a href="{{ url_for('stories', search=search or None, sort=sort_arg) }}" class="chip"{% if not category %} aria-current="page"{% endif %}>All</a>
             {% for item in categories %}
-                <a href="{{ url_for('stories', category=item, search=search or None) }}" class="chip"{% if category|lower == item|lower %} aria-current="page"{% endif %}>{{ item }}</a>
+                <a href="{{ url_for('stories', category=item, search=search or None, sort=sort_arg) }}" class="chip"{% if category|lower == item|lower %} aria-current="page"{% endif %}>{{ item }}</a>
             {% endfor %}
         </nav>
     </section>
 
+    {% if trending %}
+        <section class="trending" aria-labelledby="trending-title">
+            <h2 id="trending-title" class="trending-title">{{ icon('trend', 20) }}<span>Trending this week</span></h2>
+            <ol class="trending-list">
+                {% for story, score in trending %}
+                    <li class="trend-card">
+                        <span class="trend-rank" aria-hidden="true">{{ loop.index }}</span>
+                        <div class="trend-body">
+                            {{ category_tag(story) }}
+                            <h3 class="trend-title">
+                                <a href="{{ url_for('view_story', slug=story.slug) }}" class="card-link trend-link">{{ story.title }}</a>
+                            </h3>
+                            <p class="trend-stats">
+                                {{ score.reactions }} {{ 'reaction' if score.reactions == 1 else 'reactions' }}
+                                · {{ score.reads }} {{ 'read' if score.reads == 1 else 'reads' }} this week
+                            </p>
+                        </div>
+                    </li>
+                {% endfor %}
+            </ol>
+        </section>
+    {% endif %}
+
     <section class="listing" aria-labelledby="listing-title">
         <div class="listing-head">
             <h2 id="listing-title">
-                {% if search %}Results for “{{ search }}”{% elif category %}{{ category }} stories{% else %}Latest stories{% endif %}
+                {% if search %}Results for “{{ search }}”{% elif category %}{{ category }} stories{% elif sort == 'read' %}Most read stories{% elif sort == 'loved' %}Most loved stories{% else %}Latest stories{% endif %}
             </h2>
             <p class="listing-count">{{ pagination.total }} {{ 'story' if pagination.total == 1 else 'stories' }}</p>
         </div>
 
+        <nav class="sort" aria-label="Sort stories">
+            <span class="sort-label" aria-hidden="true">Sort</span>
+            {% for key, label in sorts.items() %}
+                <a href="{{ url_for('stories', search=search or None, category=category or None, sort=(key if key != 'newest' else None)) }}"
+                   class="sort-option"{% if sort == key %} aria-current="true"{% endif %}>{{ label }}</a>
+            {% endfor %}
+        </nav>
+
         {% if stories %}
-            {% set show_featured = pagination.page == 1 and not search and not category %}
+            {% set show_featured = pagination.page == 1 and not search and not category and sort == 'newest' %}
             {% set rest = stories[1:] if show_featured else stories %}
 
             {% if show_featured %}
@@ -85,6 +136,7 @@
                         <p class="card-excerpt">{{ story_preview(story, 260) }}</p>
                         <p class="card-author">By {{ story.author }}{% include 'stories/_verified_mark.html' %}</p>
                         {{ story_meta(story) }}
+                        {{ engagement(story) }}
                         <span class="card-cta" aria-hidden="true">Read story {{ icon('arrow-right', 16) }}</span>
                     </div>
                 </article>
@@ -101,6 +153,7 @@
                             <p class="card-excerpt">{{ story_preview(story, 150) }}</p>
                             <p class="card-author">By {{ story.author }}{% include 'stories/_verified_mark.html' %}</p>
                             {{ story_meta(story) }}
+                            {{ engagement(story) }}
                         </article>
                     {% endfor %}
                 </div>
@@ -130,7 +183,7 @@
     {% if pagination.pages > 1 %}
         <nav class="pagination" aria-label="Pages">
             {% if pagination.has_prev %}
-                <a href="{{ url_for('stories', page=pagination.prev_num, search=search or None, category=category or None) }}" class="page-link" rel="prev">
+                <a href="{{ url_for('stories', page=pagination.prev_num, search=search or None, category=category or None, sort=sort_arg) }}" class="page-link" rel="prev">
                     {{ icon('arrow-left', 16) }}<span>Previous</span>
                 </a>
             {% endif %}
@@ -140,7 +193,7 @@
                     {% if page_number == pagination.page %}
                         <span class="page-link" aria-current="page">{{ page_number }}</span>
                     {% else %}
-                        <a href="{{ url_for('stories', page=page_number, search=search or None, category=category or None) }}" class="page-link" aria-label="Page {{ page_number }}">{{ page_number }}</a>
+                        <a href="{{ url_for('stories', page=page_number, search=search or None, category=category or None, sort=sort_arg) }}" class="page-link" aria-label="Page {{ page_number }}">{{ page_number }}</a>
                     {% endif %}
                 {% else %}
                     <span class="page-gap" aria-hidden="true">…</span>
@@ -148,7 +201,7 @@
             {% endfor %}
 
             {% if pagination.has_next %}
-                <a href="{{ url_for('stories', page=pagination.next_num, search=search or None, category=category or None) }}" class="page-link" rel="next">
+                <a href="{{ url_for('stories', page=pagination.next_num, search=search or None, category=category or None, sort=sort_arg) }}" class="page-link" rel="next">
                     <span>Next</span>{{ icon('arrow-right', 16) }}
                 </a>
             {% endif %}

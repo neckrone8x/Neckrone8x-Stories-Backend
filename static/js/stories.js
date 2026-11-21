@@ -61,6 +61,79 @@
         });
     }
 
+    /* ---------- REACTIONS (two sets on the story page, kept in step) ----------
+       Without JavaScript each button is a normal form post. With it, the post
+       is sent in the background and every button is updated from the reply. */
+    var reactionForms = document.querySelectorAll('form.reaction-form');
+    var reactionStatus = document.getElementById('reactionStatus');
+    var reactionError = document.getElementById('reactionError');
+    var reacting = false;
+
+    function showReactions(state) {
+        var buttons = document.querySelectorAll('.reaction[data-reaction]');
+        for (var i = 0; i < buttons.length; i++) {
+            var button = buttons[i];
+            var type = button.getAttribute('data-reaction');
+            var count = (state.counts && state.counts[type]) || 0;
+            var mine = state.mine === type;
+            button.classList.toggle('is-active', mine);
+            button.setAttribute('aria-pressed', mine ? 'true' : 'false');
+            button.setAttribute('aria-label', button.getAttribute('data-label') + ', ' + count +
+                                (count === 1 ? ' reaction' : ' reactions'));
+            var number = button.querySelector('.reaction-count');
+            if (number) {
+                number.textContent = String(count);
+                number.classList.toggle('is-zero', count === 0);
+            }
+        }
+    }
+
+    function reactionMessage(text, isError) {
+        if (reactionError) {
+            reactionError.textContent = isError ? text : '';
+            reactionError.hidden = !isError;
+        }
+        if (reactionStatus && !isError) reactionStatus.textContent = text;
+    }
+
+    if (reactionForms.length && window.fetch) {
+        Array.prototype.forEach.call(reactionForms, function (form) {
+            form.addEventListener('submit', function (event) {
+                event.preventDefault();
+                if (reacting) return;
+                reacting = true;
+                var button = form.querySelector('.reaction');
+                var label = button ? button.getAttribute('data-label') : '';
+                fetch(form.action, {
+                    method: 'POST',
+                    credentials: 'same-origin',
+                    headers: { 'X-Requested-With': 'fetch', 'Accept': 'application/json' }
+                }).then(function (response) {
+                    return response.json().catch(function () { return null; }).then(function (data) {
+                        return { ok: response.ok && !!data, status: response.status, data: data };
+                    });
+                }, function () {
+                    form.submit();  // network failure before any reply: fall back to a normal post
+                    return null;
+                }).then(function (result) {
+                    if (!result) return;
+                    if (result.ok) {
+                        showReactions(result.data);
+                        reactionMessage(result.data.mine ? 'You reacted: ' + label : 'Your reaction was removed', false);
+                    } else if (result.status === 429) {
+                        reactionMessage('You have reacted a lot. Please wait a little and try again.', true);
+                    } else {
+                        reactionMessage('Your reaction could not be saved. Please try again.', true);
+                    }
+                }).catch(function () {
+                    reactionMessage('Your reaction could not be saved. Please try again.', true);
+                }).then(function () {
+                    reacting = false;
+                });
+            });
+        });
+    }
+
     /* ---------- READING PROGRESS ---------- */
     var story = document.getElementById('story');
     var bar = document.getElementById('progressBar');

@@ -23,6 +23,7 @@ os.environ.setdefault("SECRET_KEY", "test-secret-key-for-unit-tests-only-123456"
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import site_security as S  # noqa: E402
+import app as app_module  # noqa: E402
 from app import Story, app, db  # noqa: E402
 
 TOKEN = "t" * 32
@@ -41,6 +42,7 @@ class AppBase(unittest.TestCase):
         os.environ.pop("FEED_TOKEN", None)
         S.limiter._hits.clear()
         S._failed_logins._hits.clear()
+        app_module.clear_trending_cache()
         self.c = app.test_client()
         with app.app_context():
             db.drop_all()
