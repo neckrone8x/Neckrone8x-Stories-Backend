@@ -30,6 +30,7 @@
                 <a href="{{ url_for('manage_stories') }}" class="active">Manage Stories</a>
                 <a href="{{ url_for('create_story') }}">Create Story</a>
                 <a href="{{ url_for('manage_submissions') }}">Submissions</a>
+                <a href="{{ url_for('manage_comments') }}">Comments</a>
                 <a href="{{ url_for('admin_analytics') }}">Analytics</a>
             </nav>
             <a href="{{ url_for('logout') }}" class="sidebar-logout">Logout</a>
@@ -118,6 +119,7 @@
                                                         method="POST"
                                                         action="{{ url_for('toggle_story', story_id=story.id) }}"
                                                     >
+    {{ csrf_field() }}
                                                         <button
                                                             type="submit"
                                                             class="pill-btn warning"
@@ -131,6 +133,7 @@
                                                         action="{{ url_for('delete_story', story_id=story.id) }}"
                                                         onsubmit="return confirm('Delete this story permanently?');"
                                                     >
+    {{ csrf_field() }}
                                                         <button type="submit" class="pill-btn danger">
                                                             Delete
                                                         </button>

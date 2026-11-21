@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="robots" content="noindex">
+    <title>Comments | Neckrone8x Stories</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/admin.css') }}?v=2">
+</head>
+<body>
+    <div class="admin-shell">
+        <aside class="sidebar">
+            <div class="sidebar-logo">
+                NECKRONE8X
+                <span>STORIES</span>
+            </div>
+            <div class="sidebar-title">Administration</div>
+            <nav class="sidebar-menu">
+                <a href="{{ url_for('dashboard') }}">Dashboard</a>
+                <a href="{{ url_for('stories') }}">Stories</a>
+                <a href="{{ url_for('manage_stories') }}">Manage Stories</a>
+                <a href="{{ url_for('create_story') }}">Create Story</a>
+                <a href="{{ url_for('manage_submissions') }}">Submissions</a>
+                <a href="{{ url_for('manage_comments') }}" class="active" aria-current="page">Comments</a>
+                <a href="{{ url_for('admin_analytics') }}">Analytics</a>
+            </nav>
+            <a href="{{ url_for('logout') }}" class="sidebar-logout">Logout</a>
+        </aside>
+
+        <main class="main">
+            <div class="topbar">
+                <div>
+                    <h1>Comments</h1>
+                    <p>Comments with a web link are held until you approve them. Only approved comments are public.</p>
+                </div>
+            </div>
+
+            <nav class="tabs" aria-label="Comment filter">
+                {% for key, label in [('held', 'Held'), ('approved', 'Approved'), ('all', 'All')] %}
+                    <a href="{{ url_for('manage_comments', tab=key) }}" class="tab"{% if tab == key %} aria-current="page"{% endif %}>
+                        {{ label }} <span class="tab-count">{{ counts[key] }}</span>
+                    </a>
+                {% endfor %}
+            </nav>
+
+            <section class="section">
+                {% if comments %}
+                    <div class="data-table-wrap">
+                        <table class="data-table comments-table">
+                            <thead>
+                                <tr>
+                                    <th scope="col">Comment</th>
+                                    <th scope="col">Name</th>
+                                    <th scope="col">Story</th>
+                                    <th scope="col">Date</th>
+                                    <th scope="col">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for comment in comments %}
+                                    {% set has_link = ('http://' in comment.content|lower) or ('https://' in comment.content|lower) or ('www.' in comment.content|lower) %}
+                                    <tr id="comment-{{ comment.id }}">
+                                        <td data-label="Comment">
+                                            <div class="comment-badges">
+                                                {% if not comment.approved %}<span class="badge badge-held">Held</span>{% else %}<span class="badge badge-ok">Approved</span>{% endif %}
+                                                {% if has_link %}<span class="badge">Has link</span>{% endif %}
+                                                {% if comment.link_trusted %}<span class="badge badge-ok">Link trusted</span>{% endif %}
+                                            </div>
+                                            <div class="comment-body">{{ comment.content }}</div>
+                                        </td>
+                                        <td data-label="Name">{{ comment.name }}</td>
+                                        <td data-label="Story">
+                                            {% if comment.story.published %}
+                                                <a href="{{ url_for('view_story', slug=comment.story.slug) }}#comments" target="_blank" rel="noopener noreferrer">{{ comment.story.title }}</a>
+                                            {% else %}
+                                                <a href="{{ url_for('review_story', story_id=comment.story.id) }}">{{ comment.story.title }}</a>
+                                                <div class="cell-sub">Story not published</div>
+                                            {% endif %}
+                                        </td>
+                                        <td data-label="Date">
+                                            <time datetime="{{ comment.created_at.strftime('%Y-%m-%dT%H:%M') }}">{{ comment.created_at.strftime('%b %d, %Y') }}</time>
+                                            <div class="cell-sub">{{ comment.created_at.strftime('%H:%M') }} UTC</div>
+                                        </td>
+                                        <td data-label="Actions">
+                                            <div class="action-row">
+                                                {% if not comment.approved %}
+                                                    <form method="POST" action="{{ url_for('approve_comment', comment_id=comment.id) }}">
+                                                        {{ csrf_field() }}
+                                                        <input type="hidden" name="tab" value="{{ tab }}">
+                                                        <input type="hidden" name="page" value="{{ pagination.page }}">
+                                                        <button type="submit" class="pill-btn">Approve</button>
+                                                    </form>
+                                                    {% if has_link %}
+                                                        <form method="POST" action="{{ url_for('approve_comment_trusted', comment_id=comment.id) }}">
+                                                            {{ csrf_field() }}
+                                                            <input type="hidden" name="tab" value="{{ tab }}">
+                                                            <input type="hidden" name="page" value="{{ pagination.page }}">
+                                                            <button type="submit" class="pill-btn">Approve and trust link</button>
+                                                        </form>
+                                                    {% endif %}
+                                                {% endif %}
+
+                                                <details class="confirm">
+                                                    <summary class="pill-btn danger">Delete</summary>
+                                                    <div class="confirm-box">
+                                                        <p>Delete this comment for good?</p>
+                                                        <form method="POST" action="{{ url_for('delete_comment', comment_id=comment.id) }}">
+                                                            {{ csrf_field() }}
+                                                            <input type="hidden" name="tab" value="{{ tab }}">
+                                                            <input type="hidden" name="page" value="{{ pagination.page }}">
+                                                            <button type="submit" class="pill-btn danger">Yes, delete</button>
+                                                        </form>
+                                                    </div>
+                                                </details>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+
+                    {% if pagination.pages > 1 %}
+                        <nav class="pagination" aria-label="Pages">
+                            {% if pagination.has_prev %}<a href="{{ url_for('manage_comments', tab=tab, page=pagination.prev_num) }}">← Previous</a>{% endif %}
+                            <span class="pagination-info">Page {{ pagination.page }} of {{ pagination.pages }}</span>
+                            {% if pagination.has_next %}<a href="{{ url_for('manage_comments', tab=tab, page=pagination.next_num) }}">Next →</a>{% endif %}
+                        </nav>
+                    {% endif %}
+                {% else %}
+                    <div class="empty-state">
+                        {% if tab == 'held' %}No held comments. Nothing is waiting for review.
+                        {% elif tab == 'approved' %}No approved comments yet.
+                        {% else %}No comments yet.{% endif %}
+                    </div>
+                {% endif %}
+            </section>
+        </main>
+    </div>
+</body>
+</html>

@@ -245,10 +245,12 @@ class FeaturesStillWorkTests(LayoutBase):
             sid = Story.query.filter_by(slug="hello").one().id
         html = self.c.get("/admin/stories/edit/%d" % sid).get_data(as_text=True)
         self.assertIn("css/admin.css", html)
+        token = re.search(r'name="csrf_token" value="([^"]+)"', html).group(1)
         self.assertIn('value="Hello"', html)
         self.assertRegex(html, r'<option value="Life" selected>')
         r = self.c.post("/admin/stories/edit/%d" % sid, headers={"Origin": HOST},
-                        data={"title": "Hello again", "category": "Life", "content": "New text", "author": "B"})
+                        data={"title": "Hello again", "category": "Life", "content": "New text", "author": "B",
+                              "csrf_token": token})
         self.assertEqual(r.status_code, 302)
         with app.app_context():
             self.assertEqual(db.session.get(Story, sid).title, "Hello again")

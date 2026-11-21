@@ -28,6 +28,7 @@ from urllib.parse import urlparse
 
 from flask import (abort, current_app, g, jsonify, redirect, request, session,
                    url_for)
+from markupsafe import Markup
 from werkzeug.middleware.proxy_fix import ProxyFix
 from werkzeug.security import check_password_hash
 
@@ -73,6 +74,10 @@ def configure_security(app) -> None:
     app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
     app.before_request(_same_site_posts_only)
     app.after_request(_add_headers)
+    # templates write {{ csrf_field() }} inside an admin <form>
+    app.jinja_env.globals["csrf_token"] = csrf_token
+    app.jinja_env.globals["csrf_field"] = lambda: Markup(
+        '<input type="hidden" name="%s" value="%s">' % (CSRF_FIELD, csrf_token()))
 
 
 _SAFE = {"GET", "HEAD", "OPTIONS"}
@@ -303,6 +308,38 @@ def start_admin_session() -> None:
     session["admin_logged_in"] = True
     session["admin_at"] = int(time.time())
     session.permanent = True
+
+
+# ───────────────────────── form token (CSRF) ─────────────────────────
+# A secret per admin session, put in every admin form as a hidden field and
+# checked on submit. Works together with the Origin check above.
+
+CSRF_FIELD = "csrf_token"
+
+
+def csrf_token() -> str:
+    token = session.get("_csrf")
+    if not token:
+        token = secrets.token_urlsafe(32)
+        session["_csrf"] = token
+    return token
+
+
+def csrf_valid() -> bool:
+    expected = session.get("_csrf") or ""
+    given = request.form.get(CSRF_FIELD, "") or ""
+    return bool(expected) and hmac.compare_digest(given.encode("utf-8"),
+                                                  expected.encode("utf-8"))
+
+
+def csrf_required(view):
+    """Put under @admin_required: refuses a POST without the session's token."""
+    @wraps(view)
+    def wrapper(*args, **kwargs):
+        if request.method not in _SAFE and not csrf_valid():
+            abort(403)
+        return view(*args, **kwargs)
+    return wrapper
 
 
 def admin_required(view):

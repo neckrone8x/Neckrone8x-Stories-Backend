@@ -41,7 +41,7 @@
             <h1 class="story-title">{{ story.title }}</h1>
             <p class="story-byline">By <strong>{{ story.author }}</strong>{% include 'stories/_verified_mark.html' %}</p>
             <ul class="story-meta">
-                <li>{{ icon('calendar', 16) }}<time datetime="{{ story.created_at.strftime('%Y-%m-%d') }}">{{ story.created_at.strftime('%B %d, %Y') }}</time></li>
+                <li>{{ icon('calendar', 16) }}<time datetime="{{ story.shown_at.strftime('%Y-%m-%d') }}">{{ story.shown_at.strftime('%B %d, %Y') }}</time></li>
                 <li>{{ icon('clock', 16) }}<span>{{ reading_minutes(story.content) }} min read</span></li>
                 <li>{{ icon('eye', 16) }}<span>{{ story.read_count or 0 }} {{ 'read' if story.read_count == 1 else 'reads' }}</span></li>
             </ul>
@@ -110,6 +110,12 @@
                 <button type="submit" class="button">Post comment</button>
             </form>
 
+            {% if comment_held %}
+                <p class="notice comment-held" role="status">
+                    Thanks! Your comment has a web link, so it will appear after a quick review.
+                </p>
+            {% endif %}
+
             {% if comments %}
                 <ol class="comments">
                     {% for comment in comments %}
@@ -119,7 +125,7 @@
                                 <span class="comment-author">{{ comment.name }}</span>
                                 <time class="comment-time" datetime="{{ comment.created_at.strftime('%Y-%m-%d') }}">{{ comment.created_at.strftime('%B %d, %Y') }}</time>
                             </div>
-                            <p class="comment-text">{{ comment.content }}</p>
+                            <p class="comment-text">{{ comment|comment_text }}</p>
                         </li>
                     {% endfor %}
                 </ol>

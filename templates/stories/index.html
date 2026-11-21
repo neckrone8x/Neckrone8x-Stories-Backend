@@ -14,7 +14,7 @@
 <ul class="story-meta">
     <li>{{ icon('clock', 16) }}<span>{{ reading_minutes(story.content) }} min read</span></li>
     <li>{{ icon('eye', 16) }}<span>{{ story.read_count or 0 }} {{ 'read' if (story.read_count or 0) == 1 else 'reads' }}</span></li>
-    <li>{{ icon('calendar', 16) }}<time datetime="{{ story.created_at.strftime('%Y-%m-%d') }}">{{ story.created_at.strftime('%b %d, %Y') }}</time></li>
+    <li>{{ icon('calendar', 16) }}<time datetime="{{ story.shown_at.strftime('%Y-%m-%d') }}">{{ story.shown_at.strftime('%b %d, %Y') }}</time></li>
 </ul>
 {%- endmacro -%}
 

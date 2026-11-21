@@ -24,6 +24,7 @@
                 <a href="{{ url_for('manage_stories') }}" class="active">Manage Stories</a>
                 <a href="{{ url_for('create_story') }}">Create Story</a>
                 <a href="{{ url_for('manage_submissions') }}">Submissions</a>
+                <a href="{{ url_for('manage_comments') }}">Comments</a>
                 <a href="{{ url_for('admin_analytics') }}">Analytics</a>
             </nav>
             <a href="{{ url_for('logout') }}" class="sidebar-logout">Logout</a>
@@ -43,6 +44,7 @@
             {% endif %}
             <section class="section">
                 <form method="POST" action="{{ url_for('edit_story', story_id=story.id) }}">
+    {{ csrf_field() }}
                     <div class="form-group">
                         <label for="title">Story Title</label>
                         <input

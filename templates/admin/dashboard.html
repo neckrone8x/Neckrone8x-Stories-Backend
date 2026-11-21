@@ -52,6 +52,7 @@
                 <a href="{{ url_for('manage_submissions') }}">
                     Submissions
                 </a>
+                <a href="{{ url_for('manage_comments') }}">Comments</a>
                 <a href="{{ url_for('admin_analytics') }}">
                     Analytics
                 </a>
@@ -105,6 +106,19 @@
 
             </section>
 
+
+            <!-- HELD COMMENTS -->
+            <section class="section held-callout{% if held_comments %} has-held{% endif %}">
+                <div class="section-header">
+                    <div>
+                        <h2>Held Comments</h2>
+                        <p>Comments with a web link wait here until you approve them.</p>
+                    </div>
+                    <a href="{{ url_for('manage_comments', tab='held') }}" class="section-link">
+                        {% if held_comments %}Review {{ held_comments }} held comment{{ '' if held_comments == 1 else 's' }} →{% else %}No held comments · View all →{% endif %}
+                    </a>
+                </div>
+            </section>
 
             <!-- PENDING SUBMISSIONS -->
             <section class="section">
@@ -182,7 +196,7 @@
                                 <div class="story-meta">
                                     {{ story.category }} ·
                                     {{ story.read_count }} reads ·
-                                    {{ story.created_at.strftime('%B %d, %Y') }}
+                                    {% if story.published %}Published {{ story.shown_at.strftime('%B %d, %Y') }}{% else %}Submitted {{ story.created_at.strftime('%B %d, %Y') }}{% endif %}
                                 </div>
                             </div>
 

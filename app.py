@@ -15,6 +15,7 @@ from flask_sqlalchemy import SQLAlchemy
 
 from datetime import datetime, timedelta
 
+import logging
 import os
 import re
 
@@ -25,7 +26,7 @@ load_dotenv()
 from site_security import (
     COMMENT_MAX, COMMENT_NAME_MAX, AUTHOR_MAX, CATEGORIES, CONTENT_MAX,
     TITLE_MAX, admin_required, canonical_category, check_admin_credentials,
-    clean_category, clean_text, configure_security, feed_authorized,
+    clean_category, clean_text, configure_security, csrf_required, feed_authorized,
     feed_authorized_strict, feed_rate_ok, limit_ok,
     like_escape, login_blocked, login_failed, make_excerpt, make_slug,
     rate_ok, reading_minutes, safe_https_url, start_admin_session,
@@ -63,6 +64,32 @@ def absolute_image_url(value):
     if v.startswith("/") and not v.startswith("//"):
         return safe_https_url(request.url_root.rstrip("/") + v)
     return None
+
+
+_COMMENT_URL = re.compile(r"https?://[^\s<>\"']+", re.I)
+
+
+@app.template_filter("comment_text")
+def comment_text(comment):
+    """A comment as safe HTML. All text is escaped first. Only a comment the
+    admin approved with "trust link" gets clickable http(s) links (marked
+    nofollow / ugc); any other comment shows its addresses as plain text."""
+    from markupsafe import Markup, escape
+
+    safe = str(escape(comment.content or ""))
+    if not getattr(comment, "link_trusted", False):
+        return Markup(safe)
+
+    def to_link(match):
+        url = match.group(0)
+        tail = ""
+        while url and url[-1] in ".,;:!?)":
+            tail = url[-1] + tail
+            url = url[:-1]
+        return ('<a href="%s" rel="nofollow ugc noopener noreferrer" '
+                'target="_blank">%s</a>%s' % (url, url, tail))
+
+    return Markup(_COMMENT_URL.sub(to_link, safe))
 
 
 @app.context_processor
@@ -137,12 +164,36 @@ class Story(db.Model):
     show_mark = db.Column(db.Boolean, default=True)
     published = db.Column(db.Boolean, default=False)
     read_count = db.Column(db.Integer, default=0)
+    # created_at = when it was written / submitted (never changes).
+    # published_at = when it was approved or published (set by mark_published).
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    published_at = db.Column(db.DateTime, nullable=True)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     reads = db.relationship("StoryRead", backref="story", cascade="all, delete-orphan")
     reactions = db.relationship("Reaction", backref="story", cascade="all, delete-orphan")
     comments = db.relationship("Comment", backref="story", cascade="all, delete-orphan")
+
+    @property
+    def shown_at(self):
+        """The date readers see: the publish date, or for an old row that has
+        none yet, the submission date."""
+        return self.published_at or self.created_at
+
+    def mark_published(self):
+        """Publish now. The first time, the publish date is set to this moment;
+        a story that was published before keeps its original publish date. The
+        submission date (created_at) never changes."""
+        self.published = True
+        if self.published_at is None:
+            self.published_at = datetime.utcnow()
+
+
+def publish_order():
+    """Newest published first (old rows without a publish date fall back to
+    their submission date)."""
+    return (db.func.coalesce(Story.published_at, Story.created_at).desc(),
+            Story.id.desc())
 
 
 # ============================================================
@@ -199,7 +250,10 @@ class Comment(db.Model):
     name = db.Column(db.String(80), nullable=False, default="Anonymous")
     content = db.Column(db.Text, nullable=False)
     ip_address = db.Column(db.String(45), nullable=True)
+    # False = held for review (a comment with a link). Only approved ones are public.
     approved = db.Column(db.Boolean, default=True, nullable=False)
+    # Set by "Approve and trust link": its web addresses are shown as links.
+    link_trusted = db.Column(db.Boolean, default=False, nullable=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
 
 
@@ -243,7 +297,7 @@ def stories():
     if category:
         query = query.filter(Story.category == category)
 
-    pagination = query.order_by(Story.created_at.desc()).paginate(
+    pagination = query.order_by(*publish_order()).paginate(
         page=page, per_page=6, error_out=False
     )
 
@@ -319,7 +373,8 @@ def view_story(slug):
         story=story,
         reaction_counts=reaction_counts,
         user_reaction_type=user_reaction_type,
-        comments=comments
+        comments=comments,
+        comment_held=(request.args.get("comment") == "held")
     ))
     if story.category == "18+":
         response.headers["X-Robots-Tag"] = "noindex, nofollow"
@@ -422,6 +477,8 @@ def add_comment(slug):
     ))
     db.session.commit()
 
+    if has_link:
+        return redirect(url_for("view_story", slug=slug, comment="held") + "#comments")
     return redirect(url_for("view_story", slug=slug) + "#comments")
 
 
@@ -533,11 +590,14 @@ def dashboard():
 
     now = datetime.utcnow()
 
+    shown_at = db.func.coalesce(Story.published_at, Story.created_at)
     stories_this_month = Story.query.filter(
         Story.published == True,
-        db.extract("month", Story.created_at) == now.month,
-        db.extract("year", Story.created_at) == now.year
+        db.extract("month", shown_at) == now.month,
+        db.extract("year", shown_at) == now.year
     ).count()
+
+    held_comments = Comment.query.filter_by(approved=False).count()
 
     recent_stories = Story.query.order_by(
         Story.created_at.desc()
@@ -558,7 +618,8 @@ def dashboard():
         recent_stories=recent_stories,
         pending_stories=pending_stories,
         top_stories=top_stories,
-        pending_submissions=pending_count
+        pending_submissions=pending_count,
+        held_comments=held_comments
     )
 
 
@@ -568,6 +629,7 @@ def dashboard():
 
 @app.route("/admin/create-story", methods=["GET", "POST"])
 @admin_required
+@csrf_required
 def create_story():
 
     if request.method == "POST":
@@ -596,9 +658,11 @@ def create_story():
             content=content,
             author=(author or "Anonymous"),
             cover_image=cover_image,
-            published=published,
+            published=False,
             read_count=0
         )
+        if published:
+            story.mark_published()
 
         db.session.add(story)
         db.session.commit()
@@ -617,7 +681,7 @@ def create_story():
 def manage_stories():
 
     stories = Story.query.filter_by(published=True).order_by(
-        Story.created_at.desc()
+        *publish_order()
     ).all()
 
     return render_template("admin/stories.html", stories=stories)
@@ -666,10 +730,11 @@ def review_story(story_id):
 
 @app.route("/admin/stories/approve/<int:story_id>", methods=["POST"])
 @admin_required
+@csrf_required
 def approve_story(story_id):
 
     story = Story.query.get_or_404(story_id)
-    story.published = True
+    story.mark_published()
     db.session.commit()
 
     return redirect(url_for("dashboard"))
@@ -681,6 +746,7 @@ def approve_story(story_id):
 
 @app.route("/admin/stories/edit/<int:story_id>", methods=["GET", "POST"])
 @admin_required
+@csrf_required
 def edit_story(story_id):
 
     story = Story.query.get_or_404(story_id)
@@ -1028,6 +1094,7 @@ def story_reads(story_id):
 
 @app.route("/admin/stories/delete/<int:story_id>", methods=["POST"])
 @admin_required
+@csrf_required
 def delete_story(story_id):
 
     story = Story.query.get_or_404(story_id)
@@ -1043,28 +1110,104 @@ def delete_story(story_id):
 
 @app.route("/admin/stories/toggle/<int:story_id>", methods=["POST"])
 @admin_required
+@csrf_required
 def toggle_story(story_id):
 
     story = Story.query.get_or_404(story_id)
-    story.published = not story.published
+    if story.published:
+        story.published = False  # the publish date is kept until it is published again
+    else:
+        story.mark_published()
     db.session.commit()
 
     return redirect(url_for("manage_stories"))
 
 
 # ============================================================
-# ADMIN — DELETE COMMENT
+# ADMIN — COMMENT MODERATION
 # ============================================================
+
+COMMENT_TABS = ("held", "approved", "all")
+
+
+def back_to_comments():
+    """Back to the tab and page the admin was on (only ever this admin page)."""
+    tab = request.form.get("tab", "held")
+    page = request.form.get("page", 1, type=int)
+    return redirect(url_for(
+        "manage_comments",
+        tab=tab if tab in COMMENT_TABS else "held",
+        page=page if page and page > 1 else None,
+    ))
+
+
+@app.route("/admin/comments")
+@admin_required
+def manage_comments():
+
+    tab = request.args.get("tab", "held")
+    if tab not in COMMENT_TABS:
+        tab = "held"
+    page = max(request.args.get("page", 1, type=int), 1)
+
+    query = Comment.query.join(Story, Comment.story_id == Story.id)
+    if tab == "held":
+        query = query.filter(Comment.approved == False)
+    elif tab == "approved":
+        query = query.filter(Comment.approved == True)
+
+    pagination = query.order_by(
+        Comment.created_at.desc(), Comment.id.desc()
+    ).paginate(page=page, per_page=25, error_out=False)
+
+    counts = {
+        "held": Comment.query.filter_by(approved=False).count(),
+        "approved": Comment.query.filter_by(approved=True).count(),
+    }
+    counts["all"] = counts["held"] + counts["approved"]
+
+    return render_template(
+        "admin/comments.html",
+        tab=tab,
+        comments=pagination.items,
+        pagination=pagination,
+        counts=counts,
+    )
+
+
+@app.route("/admin/comments/<int:comment_id>/approve", methods=["POST"])
+@admin_required
+@csrf_required
+def approve_comment(comment_id):
+
+    comment = Comment.query.get_or_404(comment_id)
+    comment.approved = True
+    comment.link_trusted = False
+    db.session.commit()
+    return back_to_comments()
+
+
+@app.route("/admin/comments/<int:comment_id>/approve-trust", methods=["POST"])
+@admin_required
+@csrf_required
+def approve_comment_trusted(comment_id):
+
+    comment = Comment.query.get_or_404(comment_id)
+    comment.approved = True
+    comment.link_trusted = True
+    db.session.commit()
+    return back_to_comments()
+
 
 @app.route("/admin/comments/delete/<int:comment_id>", methods=["POST"])
 @admin_required
+@csrf_required
 def delete_comment(comment_id):
 
     comment = Comment.query.get_or_404(comment_id)
     db.session.delete(comment)
     db.session.commit()
-
-    return redirect(request.referrer or url_for("dashboard"))
+    return back_to_comments()
 
 
 # ============================================================
@@ -1084,7 +1227,8 @@ def feed_item(story, excerpt_chars):
         "reading_minutes": reading_minutes(story.content),
         "url": url_for("view_story", slug=story.slug, _external=True),
         "cover_image": cover,
-        "published_at": story.created_at.isoformat() + "Z",
+        "published_at": story.shown_at.isoformat() + "Z",
+        "submitted_at": story.created_at.isoformat() + "Z",
         "updated_at": (story.updated_at or story.created_at).isoformat() + "Z",
     }
 
@@ -1107,7 +1251,7 @@ def api_stories():
     excerpt_chars = min(max(request.args.get("excerpt", 240, type=int), 100), 600)
 
     pagination = feed_query().order_by(
-        Story.updated_at.desc(), Story.id.desc()
+        *publish_order()
     ).paginate(page=page, per_page=limit, error_out=False)
 
     response = jsonify({
@@ -1245,11 +1389,11 @@ def robots():
 def sitemap():
     from xml.sax.saxutils import escape
 
-    rows = feed_query().order_by(Story.updated_at.desc()).limit(5000).all()
+    rows = feed_query().order_by(*publish_order()).limit(5000).all()
     items = ["<url><loc>%s</loc></url>" % escape(
         url_for("stories", _external=True))]
     for story in rows:
-        stamp = (story.updated_at or story.created_at).strftime("%Y-%m-%d")
+        stamp = max(story.updated_at or story.shown_at, story.shown_at).strftime("%Y-%m-%d")
         items.append("<url><loc>%s</loc><lastmod>%s</lastmod></url>" % (
             escape(url_for("view_story", slug=story.slug, _external=True)),
             stamp))
@@ -1302,27 +1446,120 @@ def server_error(error):
 
 
 # ============================================================
-# CREATE DATABASE TABLES (and the indexes that keep the site fast)
+# CREATE DATABASE TABLES + SAFE SCHEMA UPGRADE
 # ============================================================
+
+schema_log = logging.getLogger("stories.schema")
+if not schema_log.handlers:
+    _handler = logging.StreamHandler()  # stderr: shows in the Render log
+    _handler.setFormatter(logging.Formatter("%(levelname)s %(message)s"))
+    schema_log.addHandler(_handler)
+schema_log.setLevel(logging.INFO)
+schema_log.propagate = False
+
+# Columns added after the first version. db.create_all() makes them on a new
+# database; upgrade_schema() adds them to an older one. The SQL is the same on
+# SQLite and Postgres except the boolean default (1/0 vs TRUE/FALSE).
+NEW_COLUMNS = (
+    # table,      column,         SQL type and default (sqlite, postgres)
+    ("stories",  "verified_tier", ("VARCHAR(16)", "VARCHAR(16)")),
+    ("stories",  "show_mark",     ("BOOLEAN DEFAULT 1", "BOOLEAN DEFAULT TRUE")),
+    ("stories",  "published_at",  ("TIMESTAMP", "TIMESTAMP")),
+    ("comments", "link_trusted",  ("BOOLEAN NOT NULL DEFAULT 0", "BOOLEAN NOT NULL DEFAULT FALSE")),
+)
+
+# CREATE INDEX IF NOT EXISTS works on SQLite and on Postgres 9.5+.
+INDEXES = (
+    ("ix_stories_pub_created", "stories (published, created_at)"),
+    ("ix_stories_pub_published", "stories (published, published_at)"),
+    ("ix_story_reads_story", "story_reads (story_id, ip_address)"),
+    ("ix_reactions_story", "reactions (story_id, ip_address)"),
+    ("ix_comments_story", "comments (story_id, approved)"),
+    ("ix_comments_held", "comments (approved, created_at)"),
+)
+
+
+def _schema_step(label, sql, params=None):
+    """Runs one statement in its own transaction. A failure is rolled back and
+    logged as a warning; it never stops the site from starting."""
+    try:
+        result = db.session.execute(db.text(sql), params or {})
+        db.session.commit()
+        return result, None
+    except Exception as error:  # noqa: BLE001 - any failure must not stop start-up
+        db.session.rollback()
+        message = "%s failed: %s: %s" % (label, type(error).__name__,
+                                         str(error).splitlines()[0][:200])
+        schema_log.warning("[schema] %s", message)
+        return None, message
+
+
+def upgrade_schema():
+    """Brings an existing database up to date. Safe to run any number of times
+    and on a database that already has everything: it only adds what the
+    database is missing. Returns a short report (also written to the log)."""
+    report = {"added": [], "indexes": 0, "backfilled": 0, "warnings": []}
+    postgres = db.engine.dialect.name == "postgresql"
+
+    try:
+        inspector = db.inspect(db.engine)
+        existing = {t: {c["name"] for c in inspector.get_columns(t)}
+                    for t in {table for table, _, _ in NEW_COLUMNS}
+                    if inspector.has_table(t)}
+    except Exception as error:  # noqa: BLE001
+        report["warnings"].append("could not read the tables: %s" % type(error).__name__)
+        schema_log.warning("[schema] could not read the tables (%s); skipping the upgrade",
+                           type(error).__name__)
+        return report
+
+    for table, column, (sqlite_type, postgres_type) in NEW_COLUMNS:
+        if table not in existing or column in existing[table]:
+            continue
+        col_type = postgres_type if postgres else sqlite_type
+        _, warning = _schema_step(
+            "add column %s.%s" % (table, column),
+            "ALTER TABLE %s ADD COLUMN %s %s" % (table, column, col_type))
+        if warning:
+            report["warnings"].append(warning)
+        else:
+            report["added"].append("%s.%s" % (table, column))
+            schema_log.info("[schema] added column %s.%s", table, column)
+
+    for name, target in INDEXES:
+        _, warning = _schema_step("index %s" % name,
+                                  "CREATE INDEX IF NOT EXISTS %s ON %s" % (name, target))
+        if warning:
+            report["warnings"].append(warning)
+        else:
+            report["indexes"] += 1
+
+    # Old published stories have no publish date yet: use their submission
+    # date (what readers saw before). Only touches rows where it is empty.
+    result, warning = _schema_step(
+        "fill publish dates",
+        "UPDATE stories SET published_at = created_at "
+        "WHERE published_at IS NULL AND published = :yes",
+        {"yes": True})
+    if warning:
+        report["warnings"].append(warning)
+    else:
+        report["backfilled"] = max(result.rowcount or 0, 0)
+
+    schema_log.info(
+        "[schema] upgrade done (%s): added=%s, indexes ok=%d/%d, publish dates filled=%d, warnings=%d",
+        "postgres" if postgres else db.engine.dialect.name,
+        ",".join(report["added"]) or "none", report["indexes"], len(INDEXES),
+        report["backfilled"], len(report["warnings"]))
+    return report
+
 
 with app.app_context():
     db.create_all()
-
-    for statement in (
-        "ALTER TABLE stories ADD COLUMN IF NOT EXISTS verified_tier VARCHAR(16)",
-        "ALTER TABLE stories ADD COLUMN IF NOT EXISTS show_mark BOOLEAN DEFAULT TRUE",
-        "ALTER TABLE stories ADD COLUMN verified_tier VARCHAR(16)",  # SQLite; an error on Postgres is ignored
-        "ALTER TABLE stories ADD COLUMN show_mark BOOLEAN DEFAULT 1",
-        "CREATE INDEX IF NOT EXISTS ix_stories_pub_created ON stories (published, created_at)",
-        "CREATE INDEX IF NOT EXISTS ix_story_reads_story ON story_reads (story_id, ip_address)",
-        "CREATE INDEX IF NOT EXISTS ix_reactions_story ON reactions (story_id, ip_address)",
-        "CREATE INDEX IF NOT EXISTS ix_comments_story ON comments (story_id, approved)",
-    ):
-        try:
-            db.session.execute(db.text(statement))
-            db.session.commit()
-        except Exception:
-            db.session.rollback()
+    try:
+        upgrade_schema()
+    except Exception as error:  # noqa: BLE001 - never block start-up
+        db.session.rollback()
+        schema_log.warning("[schema] upgrade stopped early: %s", type(error).__name__)
 
 
 # ============================================================

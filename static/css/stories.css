@@ -704,6 +704,8 @@ a.page-link:hover { border-color: var(--accent); color: var(--text); }
 .copy-message { min-height: 1.5em; margin-top: 8px; color: var(--ok); font-size: 0.9rem; font-weight: 500; }
 
 .comment-form { margin-bottom: 24px; }
+.comment-held { margin: -8px 0 20px; }
+.comment-text a { overflow-wrap: anywhere; }
 .comment-form .button { justify-self: start; }
 .comments { list-style: none; padding: 0; display: grid; gap: 12px; }
 .comment { padding: 14px; border-radius: var(--radius-small); background: var(--bg); border: 1px solid var(--border); }

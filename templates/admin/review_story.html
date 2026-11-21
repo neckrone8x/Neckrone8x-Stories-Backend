@@ -31,6 +31,7 @@
                 <a href="{{ url_for('manage_stories') }}">Manage Stories</a>
                 <a href="{{ url_for('create_story') }}">Create Story</a>
                 <a href="{{ url_for('manage_submissions') }}" class="active">Submissions</a>
+                <a href="{{ url_for('manage_comments') }}">Comments</a>
                 <a href="{{ url_for('admin_analytics') }}">Analytics</a>
             </nav>
             <a href="{{ url_for('logout') }}" class="sidebar-logout">Logout</a>
@@ -56,7 +57,7 @@
                         <p>
                             {{ story.category }} ·
                             {{ story.author }}{% include 'admin/_tier.html' %} ·
-                            {{ story.created_at.strftime("%B %d, %Y") }}
+                            Submitted {{ story.created_at.strftime("%B %d, %Y") }}
                         </p>
                     </div>
                 </div>
@@ -71,6 +72,7 @@
                         method="POST"
                         action="{{ url_for('approve_story', story_id=story.id) }}"
                     >
+    {{ csrf_field() }}
                         <button type="submit" class="btn-approve">
                             ✓ Approve &amp; Publish
                         </button>
@@ -81,6 +83,7 @@
                         action="{{ url_for('delete_story', story_id=story.id) }}"
                         onsubmit="return confirm('Delete this story permanently?');"
                     >
+    {{ csrf_field() }}
                         <button type="submit" class="btn-delete">
                             Delete
                         </button>
