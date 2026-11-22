@@ -109,6 +109,7 @@ def inject_template_globals():
         # the one category list (categories.py), for every form and link
         "categories": CATEGORIES,
         "category_slug": category_slug,
+        "canonical_category": canonical_category,
     }
 
 
@@ -363,29 +364,23 @@ def category_story_counts():
 
 
 def category_chips(selected=""):
-    """The chips under the search box, and the rest for the More panel.
+    """The chips under the search box, and the list for the More panel.
 
-    Only categories with at least one published story. Most stories first
-    (ties keep the list order), Other always last; the first 8 are chips, the
-    rest go in More. The selected category is always a chip, even if it has
-    no stories or would otherwise be in More.
+    Main row: the first 8 categories, in the order of categories.py, that
+    have at least one published story (Other always last), plus the selected
+    category if it is not among them.
+    More: always ALL categories, in the same order, including ones with no
+    stories yet (count 0), so every category can be reached.
     Each item: {"name", "slug", "count"}."""
     counts = category_story_counts()
-    order = {c.name: i for i, c in enumerate(CATEGORY_LIST)}
-    ranked = sorted(
-        (c for c in CATEGORY_LIST if counts[c.name] > 0),
-        key=lambda c: (c.name == LAST_CATEGORY, -counts[c.name], order[c.name]),
-    )
-    items = [{"name": c.name, "slug": c.slug, "count": counts[c.name]} for c in ranked]
-    shown, more = items[:CHIPS_SHOWN], items[CHIPS_SHOWN:]
+    every = [{"name": c.name, "slug": c.slug, "count": counts[c.name]} for c in CATEGORY_LIST]
+    with_stories = sorted((x for x in every if x["count"] > 0),
+                          key=lambda x: x["name"] == LAST_CATEGORY)   # stable: list order, Other last
+    shown = with_stories[:CHIPS_SHOWN]
     if selected and selected not in [x["name"] for x in shown]:
-        pick = next((x for x in more if x["name"] == selected), None)
-        if pick:
-            more.remove(pick)
-        else:
-            pick = {"name": selected, "slug": category_slug(selected), "count": counts.get(selected, 0)}
-        shown.append(pick)
-    return shown, more
+        shown.append(next((x for x in every if x["name"] == selected),
+                          {"name": selected, "slug": category_slug(selected), "count": counts.get(selected, 0)}))
+    return shown, every
 
 
 SORTS = {"newest": "Newest", "read": "Most read", "loved": "Most loved"}

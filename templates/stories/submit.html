@@ -27,7 +27,7 @@
                    placeholder="Give your story a title" value="{{ request.form.get('title', '') }}">
         </div>
 
-        {% set selected_category = request.form.get('category', 'General') %}
+        {% set selected_category = request.form.get('category') or canonical_category(request.args.get('category')) or 'General' %}
         <div class="field">
             <label for="category">Category</label>
             <select id="category" name="category">

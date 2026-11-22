@@ -98,9 +98,8 @@
                 <details class="chips-more" id="chipsMore">
                     <summary class="chip chip-more">
                         <span>More<span class="visually-hidden"> categories</span></span>
-                        <span class="chip-count" aria-hidden="true">+{{ more_chips|length }}</span>
                     </summary>
-                    <div class="chips-more-panel" role="group" aria-label="More categories">
+                    <div class="chips-more-panel" role="group" aria-label="All categories">
                         {% for item in more_chips %}{{ chip(item) }}{% endfor %}
                     </div>
                 </details>
@@ -217,6 +216,13 @@
                 <h3>No stories found</h3>
                 <p>There is no “{{ unknown_category }}” category. Try one of the categories above.</p>
                 <a href="{{ url_for('stories') }}" class="button button-ghost">See all stories</a>
+            </div>
+        {% elif category and not search and pagination.total == 0 %}
+            {#- a real category that has no published stories yet -#}
+            <div class="empty">
+                <span class="empty-icon">{{ icon('pen', 28) }}</span>
+                <h3>No stories here yet. Be the first to share one.</h3>
+                <a href="{{ url_for('submit_story', category=category_arg) }}" class="button">{{ icon('pen', 18) }}<span>Share your story</span></a>
             </div>
         {% elif search or category %}
             <div class="empty">

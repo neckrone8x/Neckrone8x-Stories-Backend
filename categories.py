@@ -17,22 +17,24 @@ class Category(NamedTuple):
     slug: str      # used in links
 
 
-# Form order (the list page orders its chips by number of stories instead).
+# The one order for everything: the More panel, the Share and admin forms,
+# GET /api/categories and the main chip row (which shows the first 8 of these
+# that have published stories). Names and slugs are stored data: never rename.
 CATEGORY_LIST = [
-    Category("General", "general"),
-    Category("Confession", "confession"),
-    Category("Experience", "experience"),
-    Category("News", "news"),
     Category("Relationship", "relationship"),
-    Category("Marriage", "marriage"),
-    Category("Life", "life"),
-    Category("Novels", "novels"),
+    Category("Confession", "confession"),
     Category("Campus", "campus"),
+    Category("Novels", "novels"),
+    Category("Marriage", "marriage"),
     Category("Family", "family"),
+    Category("Experience", "experience"),
     Category("Mystery & Horror", "mystery-horror"),
+    Category("Life", "life"),
+    Category("News", "news"),
     Category("Politics", "politics"),
     Category("Sports", "sports"),
     Category("Technology", "technology"),
+    Category("General", "general"),
     Category("18+", "18-plus"),       # adult: age gate, no excerpt (see app.py)
     Category("Other", "other"),
 ]

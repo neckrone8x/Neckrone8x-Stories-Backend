@@ -102,7 +102,11 @@ class ListTests(unittest.TestCase):
 
 class FormTests(Step6Base):
     def test_share_your_story_form(self):
-        self.assertEqual(options(self.html("/stories/submit")), C.CATEGORIES)
+        html = self.html("/stories/submit")
+        self.assertEqual(options(html), ["Relationship", "Confession", "Campus", "Novels", "Marriage", "Family",
+                                         "Experience", "Mystery & Horror", "Life", "News", "Politics", "Sports",
+                                         "Technology", "General", "18+", "Other"])
+        self.assertIn('<option value="General" selected>', html)          # still the default
 
     def test_submitted_category_is_checked_against_the_list(self):
         for sent, stored in (("mystery-horror", "Mystery & Horror"), ("Sports", "Sports"), ("Nonsense", "General")):
@@ -171,60 +175,91 @@ class FormTests(Step6Base):
 # ───────────────────────── chips and More ─────────────────────────
 
 class ChipTests(Step6Base):
-    def test_empty_categories_hidden_and_counts_shown(self):
-        self.stories_in({"Life": 3, "Campus": 1})
+    def test_main_row_only_popular_more_always_has_all_sixteen(self):
+        """The live case: 7 categories with stories, none of the new ones."""
+        self.stories_in({"Relationship": 4, "Confession": 3, "General": 1, "Experience": 1,
+                         "News": 1, "Life": 1, "Novels": 1})
         with app.app_context():
             db.session.add(Story(title="Draft", slug="draft", category="Sports", content="w " * 60,
                                  author="A", published=False))
             db.session.commit()
         html = self.html("/stories")
         shown, more = self.chips(html)
-        self.assertEqual(shown, ["Life", "Campus"])        # Sports has only a draft
-        self.assertEqual(more, [])
-        self.assertNotIn('id="chipsMore"', html)           # nothing more to show
+        # categories.py order, not story count (Relationship 4, Confession 3, the rest 1)
+        self.assertEqual(shown, ["Relationship", "Confession", "Novels", "Experience", "Life", "News", "General"])
+        self.assertIn('<details class="chips-more" id="chipsMore">', html)     # More shows even with 7
+        self.assertEqual(more, C.CATEGORIES)                                   # all 16, list order
+        for name in NEW:
+            self.assertIn(name, more)
+        # empty and draft-only categories show 0 (a draft is not counted)
+        self.assertIn('href="/stories?category=sports" class="chip">\n    <span>Sports</span><span class="chip-count">'
+                      '<span class="visually-hidden">, </span>0<', html)
         self.assertRegex(html, r'class="chip" aria-current="page">All</a>')
-        self.assertIn('<span>Life</span><span class="chip-count"><span class="visually-hidden">, </span>3'
+        self.assertIn('<span>Relationship</span><span class="chip-count"><span class="visually-hidden">, </span>4'
                       '<span class="visually-hidden"> stories</span></span>', html)
         self.assertIn('1<span class="visually-hidden"> story</span>', html)
 
-    def test_order_by_count_first_eight_other_last_rest_in_more(self):
+    def test_more_shows_all_sixteen_even_with_no_stories(self):
+        html = self.html("/stories")
+        shown, more = self.chips(html)
+        self.assertEqual(shown, [])
+        self.assertEqual(more, C.CATEGORIES)
+
+    def test_main_row_follows_the_list_order_not_the_counts(self):
         self.stories_in({"Other": 9, "General": 1, "Life": 7, "News": 6, "Campus": 5, "Family": 4,
                          "Sports": 3, "Politics": 2, "Technology": 2, "Novels": 1, "18+": 2})
         shown, more = self.chips(self.html("/stories"))
-        # ties (2, 1) keep the list order; Other is last even with the most stories
-        self.assertEqual(shown, ["Life", "News", "Campus", "Family", "Sports", "Politics", "Technology", "18+"])
-        self.assertEqual(more, ["General", "Novels", "Other"])
+        # the first 8 in categories.py order that have stories; counts do not reorder them
+        self.assertEqual(shown, ["Campus", "Novels", "Family", "Life", "News", "Politics", "Sports", "Technology"])
+        self.assertEqual(more, C.CATEGORIES)
 
     def test_other_last_among_the_chips_when_it_fits(self):
         self.stories_in({"Other": 5, "Life": 1, "News": 2})
-        self.assertEqual(self.chips(self.html("/stories"))[0], ["News", "Life", "Other"])
+        self.assertEqual(self.chips(self.html("/stories"))[0], ["Life", "News", "Other"])   # Other last even with most
 
     def test_more_panel_markup(self):
         self.stories_in({c: 1 for c in C.CATEGORIES[:10]})
         html = self.html("/stories?sort=read")
         self.assertIn('<details class="chips-more" id="chipsMore">', html)
-        self.assertRegex(html, r'<summary class="chip chip-more">\s*<span>More<span class="visually-hidden"> categories</span></span>')
-        self.assertIn('<span class="chip-count" aria-hidden="true">+2</span>', html)
-        self.assertIn('<div class="chips-more-panel" role="group" aria-label="More categories">', html)
+        self.assertRegex(html, r'<summary class="chip chip-more">\s*<span>More<span class="visually-hidden"> categories</span></span>\s*</summary>')
+        self.assertIn('<div class="chips-more-panel" role="group" aria-label="All categories">', html)
         shown, more = self.chips(html)
         self.assertEqual(len(shown), 8)
-        self.assertEqual(more, ["Campus", "Family"])            # equal counts: list order
+        self.assertEqual(len(more), 16)
         # plain links (work without JavaScript) that keep the sort
-        self.assertIn('href="/stories?category=family&amp;sort=read"', html)
+        self.assertIn('href="/stories?category=mystery-horror&amp;sort=read"', html)
 
-    def test_selected_category_always_a_chip(self):
-        self.stories_in({c: 2 for c in C.CATEGORIES[:9]})       # Campus is 9th: in More
-        self.assertIn("Campus", self.chips(self.html("/stories"))[1])
-        html = self.html("/stories?category=campus")
+    def test_selected_category_always_in_the_main_row(self):
+        self.stories_in({c: 2 for c in C.CATEGORIES[:9]})       # the 9th (Life) misses the row of 8
+        ninth = C.CATEGORY_LIST[8]
+        self.assertEqual(ninth.name, "Life")
+        self.assertNotIn("Life", self.chips(self.html("/stories"))[0])
+        html = self.html("/stories?category=" + ninth.slug)
         shown, more = self.chips(html)
-        self.assertIn("Campus", shown)
-        self.assertNotIn("Campus", more)
-        self.assertRegex(html, r'class="chip" aria-current="page">\s*<span>Campus</span>')
-        # an empty (but real) category: still a chip, count 0, normal empty message
-        html = self.html("/stories?category=politics")
-        self.assertIn("Politics", self.chips(html)[0])
-        self.assertIn("Nothing matches", html)
-        self.assertIn("Politics stories", html)
+        self.assertEqual(shown, C.CATEGORIES[:8] + ["Life"])
+        self.assertEqual(more, C.CATEGORIES)
+        self.assertRegex(html, r'class="chip" aria-current="page">\s*<span>Life</span>')
+
+    def test_empty_category_page_invites_a_story(self):
+        self.stories_in({"Life": 1})
+        for slug, name in (("politics", "Politics"), ("mystery-horror", "Mystery &amp; Horror")):
+            r = self.c.get("/stories?category=" + slug)
+            self.assertEqual(r.status_code, 200)
+            html = r.get_data(as_text=True)
+            self.assertIn(name.replace("&amp;", "&"), [x for x in self.chips(html)[0]])
+            self.assertIn(name + " stories", html)
+            self.assertIn("No stories here yet. Be the first to share one.", html)
+            self.assertIn('href="/stories/submit?category=%s" class="button">' % slug, html)
+            self.assertNotIn("Nothing matches", html)
+        # a search inside a category that has stories keeps the search wording
+        self.assertIn("Nothing matches", self.html("/stories?category=life&search=zzz"))
+
+    def test_share_form_opens_with_the_category_chosen(self):
+        html = self.html("/stories/submit?category=mystery-horror")
+        self.assertIn('<option value="Mystery &amp; Horror" selected>', html)
+        self.assertEqual(options(html), C.CATEGORIES)
+        html = self.html("/stories/submit?category=dragons")                # unknown: the usual default
+        self.assertIn('<option value="General" selected>', html)
 
     def test_chip_links_use_the_slug_and_keep_search_and_sort(self):
         self.stories_in({"Mystery & Horror": 1, "18+": 1})
@@ -353,6 +388,27 @@ class ApiTests(Step6Base):
         self.assertIsNotNone(m)
         self.assertIn(".sort-short { display: inline; }", m.group(1))
         self.assertRegex(m.group(1), r"\.sort-full \{[^}]*clip")            # hidden visually, still the name
+
+    def test_new_categories_end_to_end_for_mkuu(self):
+        """Each new category: shared from Mkuu, published, then found by its slug in the feed."""
+        for name in NEW:
+            S.limiter._hits.clear()
+            r = self.c.post("/api/submissions", headers=self.h,
+                            json=dict(SUBMISSION, category=name, title="Mkuu story about " + name))
+            self.assertEqual(r.status_code, 201, name)
+            with app.app_context():
+                story = Story.query.filter_by(slug=r.get_json()["slug"]).one()
+                self.assertEqual(story.category, name)
+                story.published = True
+                db.session.commit()
+            slug = C.category_slug(name)
+            data = self.get("?category=" + slug)
+            self.assertEqual(data["category"], name, name)
+            self.assertIn("Mkuu story about " + name, [s["title"] for s in data["stories"]])
+            self.assertTrue(all(s["category"] == name and s["category_slug"] == slug for s in data["stories"]))
+        counts = {x["name"]: x["count"] for x in self.c.get("/api/categories", headers=self.h).get_json()["categories"]}
+        self.assertEqual(counts["Campus"], 1)
+        self.assertEqual(counts["Mystery & Horror"], 3)                 # 2 from setUp + 1 from Mkuu
 
     def test_mkuu_unknown_category_falls_back_to_general(self):
         for sent, stored in (("Dragons", "General"), ("", "General"), (None, "General"), (["Life"], "General"),
