@@ -17,9 +17,10 @@ class Category(NamedTuple):
     slug: str      # used in links
 
 
-# The one order for everything: the More panel, the Share and admin forms,
-# GET /api/categories and the main chip row (which shows the first 8 of these
-# that have published stories). Names and slugs are stored data: never rename.
+# The one order for everything (most popular first): the Share and admin
+# forms, GET /api/categories and the list page. The main chip row always shows
+# the first CHIPS_SHOWN (8) of these, even with no stories; the More panel
+# lists the rest, in this order. Names and slugs are stored data: never rename.
 CATEGORY_LIST = [
     Category("Relationship", "relationship"),
     Category("Confession", "confession"),
@@ -28,6 +29,7 @@ CATEGORY_LIST = [
     Category("Marriage", "marriage"),
     Category("Family", "family"),
     Category("Experience", "experience"),
+    Category("18+", "18-plus"),       # adult: age gate, no excerpt (see app.py)
     Category("Mystery & Horror", "mystery-horror"),
     Category("Life", "life"),
     Category("News", "news"),
@@ -35,14 +37,13 @@ CATEGORY_LIST = [
     Category("Sports", "sports"),
     Category("Technology", "technology"),
     Category("General", "general"),
-    Category("18+", "18-plus"),       # adult: age gate, no excerpt (see app.py)
     Category("Other", "other"),
 ]
 
 CATEGORIES = [c.name for c in CATEGORY_LIST]
 DEFAULT_CATEGORY = "General"
 ADULT_CATEGORY = "18+"
-LAST_CATEGORY = "Other"              # always sorted last among the chips
+CHIPS_SHOWN = 8                      # the main chip row: the first 8 above
 
 
 def _key(value):

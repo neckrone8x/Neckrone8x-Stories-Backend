@@ -34,7 +34,7 @@ from site_security import (
     token_post, visitor_key,
 )
 from categories import (
-    ADULT_CATEGORY, CATEGORY_LIST, LAST_CATEGORY, category_slug, find_category,
+    ADULT_CATEGORY, CATEGORY_LIST, CHIPS_SHOWN, category_slug, find_category,
 )
 
 
@@ -351,9 +351,6 @@ def stories():
 # LIST HELPERS: category chips, sorting, counts for a page of cards, trending
 # ============================================================
 
-CHIPS_SHOWN = 8
-
-
 def category_story_counts():
     """Published stories per category (one grouped query), by display name.
     Stored names are matched to the list without caring about case."""
@@ -366,21 +363,17 @@ def category_story_counts():
 def category_chips(selected=""):
     """The chips under the search box, and the list for the More panel.
 
-    Main row: the first 8 categories, in the order of categories.py, that
-    have at least one published story (Other always last), plus the selected
-    category if it is not among them.
-    More: always ALL categories, in the same order, including ones with no
-    stories yet (count 0), so every category can be reached.
-    Each item: {"name", "slug", "count"}."""
+    Main row: always the first 8 categories of categories.py (18+ is the
+    eighth), even ones with no stories yet, plus the selected category if it
+    is one from More. More: the rest, in the same order (Other last).
+    Each item: {"name", "slug", "count"}; the template hides a count of 0."""
     counts = category_story_counts()
     every = [{"name": c.name, "slug": c.slug, "count": counts[c.name]} for c in CATEGORY_LIST]
-    with_stories = sorted((x for x in every if x["count"] > 0),
-                          key=lambda x: x["name"] == LAST_CATEGORY)   # stable: list order, Other last
-    shown = with_stories[:CHIPS_SHOWN]
+    shown, more = every[:CHIPS_SHOWN], every[CHIPS_SHOWN:]
     if selected and selected not in [x["name"] for x in shown]:
-        shown.append(next((x for x in every if x["name"] == selected),
-                          {"name": selected, "slug": category_slug(selected), "count": counts.get(selected, 0)}))
-    return shown, every
+        shown = shown + [next((x for x in more if x["name"] == selected),
+                              {"name": selected, "slug": category_slug(selected), "count": counts.get(selected, 0)})]
+    return shown, more
 
 
 SORTS = {"newest": "Newest", "read": "Most read", "loved": "Most loved"}

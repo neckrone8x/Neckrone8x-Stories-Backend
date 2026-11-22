@@ -20,7 +20,7 @@
 
 {%- macro chip(item) -%}
 <a href="{{ url_for('stories', category=item.slug, search=search or None, sort=sort_arg) }}" class="chip"{% if category == item.name %} aria-current="page"{% endif %}>
-    <span>{{ item.name }}</span><span class="chip-count"><span class="visually-hidden">, </span>{{ item.count }}<span class="visually-hidden"> {{ 'story' if item.count == 1 else 'stories' }}</span></span>
+    <span>{{ item.name }}</span>{% if item.count %}<span class="chip-count"><span class="visually-hidden">, </span>{{ item.count }}<span class="visually-hidden"> {{ 'story' if item.count == 1 else 'stories' }}</span></span>{% endif %}
 </a>
 {%- endmacro -%}
 
@@ -99,7 +99,7 @@
                     <summary class="chip chip-more">
                         <span>More<span class="visually-hidden"> categories</span></span>
                     </summary>
-                    <div class="chips-more-panel" role="group" aria-label="All categories">
+                    <div class="chips-more-panel" role="group" aria-label="More categories">
                         {% for item in more_chips %}{{ chip(item) }}{% endfor %}
                     </div>
                 </details>
