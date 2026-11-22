@@ -1,11 +1,29 @@
 .venv/
 .env
+.env*
 __pycache__/
 *.pyc
 *.db
 stories.db
 *.zip
 *.backup
-add_ip_column.py
-check_db.py
-check_tables.py
+
+# backups and editor leftovers
+*.bak
+*.bak_*
+*.orig
+*.rej
+
+# local data (never commit real stories or reader data)
+instance/
+submission_files/
+
+# one-off local scripts (patchers and SQLite helpers)
+apply_*.py
+check_*.py
+add_*.py
+stage*_files/
+
+# patch notes (the stage 1 deploy notes stay tracked)
+README_*.md
+!README_STAGE1.md
