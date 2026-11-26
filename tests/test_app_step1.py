@@ -182,6 +182,21 @@ class SubmissionsTests(AppBase):
         r = self.c.post("/stories/hello/comment", data={"content": "hi"}, headers={"Origin": HOST})
         self.assertEqual(r.status_code, 302)
 
+    def test_the_eighth_share_an_hour_is_the_last_then_a_429_with_its_code_and_wait(self):
+        os.environ["FEED_TOKEN"] = TOKEN
+        h = {"X-Feed-Token": TOKEN}
+        for i in range(8):
+            r = self.c.post("/api/submissions", json=dict(SUBMISSION, title="Story %d" % i), headers=h)
+            self.assertEqual(r.status_code, 201, i)
+        r = self.c.post("/api/submissions", json=dict(SUBMISSION, title="Story 9"), headers=h)
+        self.assertEqual(r.status_code, 429)
+        self.assertEqual(r.get_json()["code"], "site_author_hour")
+        self.assertIn("shared a lot", r.get_json()["error"])
+        wait = int(r.headers["Retry-After"])
+        self.assertTrue(1 <= wait <= 3601, wait)
+        other = self.c.post("/api/submissions", json=dict(SUBMISSION, author_key="fedcba987654"), headers=h)
+        self.assertEqual(other.status_code, 201)                    # another author is not held up
+
     def test_only_the_submissions_route_is_marked(self):
         marked = [name for name, view in app.view_functions.items()
                   if getattr(view, "token_post", False)]

@@ -1654,7 +1654,8 @@ def api_submissions():
     if not author_key:
         return jsonify(error="Please check your story and try again."), 400
     if not limit_ok("apishare:" + author_key, 8, 3600):
-        return jsonify(error="You have shared a lot of stories."), 429
+        # "code" tells Mkuu (and the app) which limit fired; Retry-After is added by site_security._add_headers
+        return jsonify(error="You have shared a lot of stories.", code="site_author_hour"), 429
 
     slug = make_slug(
         title, lambda x: Story.query.filter_by(slug=x).first() is not None
